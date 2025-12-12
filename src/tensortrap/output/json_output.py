@@ -40,14 +40,14 @@ def _generate_summary(results: list[ScanResult]) -> dict:
     safe = sum(1 for r in results if r.is_safe)
 
     # Count findings by severity
-    severity_counts = {}
+    severity_counts: dict[str, int] = {}
     for result in results:
         for finding in result.findings:
             sev = finding.severity.value
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
 
     # Count by format
-    format_counts = {}
+    format_counts: dict[str, int] = {}
     for result in results:
         fmt = result.format
         format_counts[fmt] = format_counts.get(fmt, 0) + 1

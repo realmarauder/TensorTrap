@@ -14,7 +14,6 @@ from tensortrap.formats.safetensors_parser import (
 from tensortrap.scanner.results import Finding, Severity
 from tensortrap.signatures.patterns import SUSPICIOUS_PATTERNS
 
-
 # Maximum reasonable header size (10MB)
 MAX_HEADER_SIZE = 10_000_000
 
@@ -48,6 +47,10 @@ def scan_safetensors(filepath: Path) -> list[Finding]:
         # If we can't parse header, we can't do further analysis
         if header is None:
             return findings
+
+    # At this point header is guaranteed to not be None
+    if header is None:
+        return findings
 
     # Check header size
     if header.header_size > SUSPICIOUS_HEADER_SIZE:
@@ -84,13 +87,14 @@ def scan_safetensors(filepath: Path) -> list[Finding]:
                     file_size = int(match.group(1))
                     break
 
+        count = len(truncation_errors)
         findings.append(
             Finding(
                 severity=Severity.HIGH,
-                message=f"File appears truncated: {len(truncation_errors)} tensor(s) exceed file size",
+                message=f"Invalid tensor offset: {count} tensor(s) exceed file size",
                 location=8,
                 details={
-                    "truncated_tensors": len(truncation_errors),
+                    "truncated_tensors": count,
                     "total_tensors": len(header.tensors),
                     "file_size": file_size,
                     "sample_tensors": [t[0] for t in truncation_errors[:5]],

@@ -6,8 +6,8 @@ information about opcodes and imports for security analysis.
 
 import io
 import pickletools
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator, Optional
 
 
 @dataclass
@@ -15,9 +15,9 @@ class PickleOp:
     """Represents a single pickle opcode."""
 
     name: str
-    arg: Optional[str]
+    arg: str | None
     pos: int
-    raw_arg: Optional[bytes] = None
+    raw_arg: bytes | None = None
 
 
 def parse_pickle_ops(data: bytes) -> Iterator[PickleOp]:
@@ -36,7 +36,7 @@ def parse_pickle_ops(data: bytes) -> Iterator[PickleOp]:
             yield PickleOp(
                 name=opcode.name,
                 arg=str(arg) if arg is not None else None,
-                pos=pos,
+                pos=pos if pos is not None else 0,
             )
     except Exception:
         # If parsing fails partway through, we've yielded what we could
@@ -97,7 +97,7 @@ def get_dangerous_opcodes(data: bytes) -> list[PickleOp]:
     return dangerous_ops
 
 
-def is_valid_pickle(data: bytes) -> tuple[bool, Optional[str]]:
+def is_valid_pickle(data: bytes) -> tuple[bool, str | None]:
     """Check if data is valid pickle format.
 
     Args:

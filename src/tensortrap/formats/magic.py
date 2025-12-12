@@ -7,7 +7,6 @@ relying solely on file extensions, which addresses CVE-2025-1889
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -18,7 +17,7 @@ class FormatDetection:
     confidence: str  # "high", "medium", "low"
     magic_match: bool
     extension_match: bool
-    details: Optional[dict] = None
+    details: dict | None = None
 
 
 # Magic byte signatures for various formats
@@ -30,36 +29,28 @@ MAGIC_SIGNATURES = {
     "pickle_p3": (b"\x80\x03", 0),  # Protocol 3
     "pickle_p4": (b"\x80\x04", 0),  # Protocol 4
     "pickle_p5": (b"\x80\x05", 0),  # Protocol 5
-
     # ZIP (PyTorch models)
     "zip": (b"PK\x03\x04", 0),  # Standard ZIP
     "zip_empty": (b"PK\x05\x06", 0),  # Empty ZIP
-
     # 7z (nullifAI bypass)
     "7z": (b"7z\xbc\xaf\x27\x1c", 0),
-
     # GGUF
     "gguf": (b"GGUF", 0),
-
     # HDF5 (Keras)
     "hdf5": (b"\x89HDF\r\n\x1a\n", 0),
-
     # ONNX (protobuf)
     "onnx_v1": (b"\x08", 0),  # Field 1, varint
-
     # NumPy
     "numpy": (b"\x93NUMPY", 0),
-
     # Tar archives
     "tar": (b"ustar", 257),
     "tar_old": (b"ustar  \x00", 257),
-
     # Gzip
     "gzip": (b"\x1f\x8b", 0),
 }
 
 
-def detect_format(filepath: Path) -> Optional[FormatDetection]:
+def detect_format(filepath: Path) -> FormatDetection | None:
     """Detect file format using magic bytes.
 
     Args:
@@ -74,7 +65,7 @@ def detect_format(filepath: Path) -> Optional[FormatDetection]:
         with open(filepath, "rb") as f:
             # Read enough bytes for all signatures
             header = f.read(512)
-    except IOError:
+    except OSError:
         return None
 
     if len(header) < 2:

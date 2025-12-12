@@ -16,8 +16,7 @@ import struct
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Optional
-
+from typing import Any
 
 # GGUF magic number: "GGUF" in ASCII
 GGUF_MAGIC = 0x46554747
@@ -60,7 +59,8 @@ def read_string(f) -> str:
     length = struct.unpack("<Q", f.read(8))[0]
     if length > 10_000_000:  # 10MB string limit
         raise ValueError(f"String too long: {length}")
-    return f.read(length).decode("utf-8", errors="replace")
+    data: bytes = f.read(length)
+    return data.decode("utf-8", errors="replace")
 
 
 def read_value(f, value_type: int) -> Any:
@@ -99,7 +99,7 @@ def read_value(f, value_type: int) -> Any:
         raise ValueError(f"Unknown value type: {value_type}")
 
 
-def parse_header(filepath: Path, max_metadata: int = 1000) -> tuple[Optional[GGUFHeader], Optional[str]]:
+def parse_header(filepath: Path, max_metadata: int = 1000) -> tuple[GGUFHeader | None, str | None]:
     """Parse GGUF file header and metadata.
 
     Args:
@@ -142,13 +142,13 @@ def parse_header(filepath: Path, max_metadata: int = 1000) -> tuple[Optional[GGU
                     value_type = struct.unpack("<I", f.read(4))[0]
                     value = read_value(f, value_type)
                     header.metadata[key] = value
-                except Exception as e:
+                except Exception:
                     # Stop reading metadata on error but return what we have
                     break
 
             return header, None
 
-    except IOError as e:
+    except OSError as e:
         return None, f"Failed to read file: {e}"
     except struct.error as e:
         return None, f"Failed to parse header: {e}"
@@ -156,7 +156,7 @@ def parse_header(filepath: Path, max_metadata: int = 1000) -> tuple[Optional[GGU
         return None, f"Unexpected error: {e}"
 
 
-def get_chat_template(header: GGUFHeader) -> Optional[str]:
+def get_chat_template(header: GGUFHeader) -> str | None:
     """Extract chat template from GGUF metadata if present.
 
     Args:

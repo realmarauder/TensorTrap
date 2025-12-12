@@ -4,13 +4,11 @@ Analyzes pickle bytecode to detect potentially malicious code execution.
 """
 
 from pathlib import Path
-from typing import Optional
 
 from tensortrap.formats.pickle_parser import (
     extract_globals,
     get_dangerous_opcodes,
     is_valid_pickle,
-    parse_pickle_ops,
 )
 from tensortrap.scanner.results import Finding, Severity
 from tensortrap.signatures.dangerous_imports import (
@@ -20,7 +18,7 @@ from tensortrap.signatures.dangerous_imports import (
 )
 
 
-def scan_pickle(data: bytes, filepath: Optional[Path] = None) -> list[Finding]:
+def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
     """Scan pickle bytecode for security issues.
 
     Args:
@@ -77,8 +75,7 @@ def scan_pickle(data: bytes, filepath: Optional[Path] = None) -> list[Finding]:
         # Also check parent modules (e.g., "urllib.request" -> check "urllib")
         module_parts = module.split(".")
         is_dangerous_module = any(
-            ".".join(module_parts[: i + 1]) in DANGEROUS_MODULES
-            for i in range(len(module_parts))
+            ".".join(module_parts[: i + 1]) in DANGEROUS_MODULES for i in range(len(module_parts))
         )
 
         if is_dangerous_module:
@@ -93,7 +90,9 @@ def scan_pickle(data: bytes, filepath: Optional[Path] = None) -> list[Finding]:
             findings.append(
                 Finding(
                     severity=severity,
-                    message=f"Dangerous import: {module}.{name}" if name else f"Dangerous import: {module}",
+                    message=f"Dangerous import: {module}.{name}"
+                    if name
+                    else f"Dangerous import: {module}",
                     location=pos,
                     details={"module": module, "function": name},
                 )
@@ -141,9 +140,7 @@ def scan_pickle(data: bytes, filepath: Optional[Path] = None) -> list[Finding]:
     # Report REDUCE opcodes (function calls)
     # Only flag as high severity if we also found dangerous imports
     has_dangerous_imports = any(
-        f.severity in (Severity.CRITICAL, Severity.HIGH)
-        and f.details
-        and "module" in f.details
+        f.severity in (Severity.CRITICAL, Severity.HIGH) and f.details and "module" in f.details
         for f in findings
     )
 
@@ -185,10 +182,8 @@ def scan_pickle_file(filepath: Path) -> list[Finding]:
         List of security findings
     """
     from tensortrap.formats.pytorch_zip import (
-        is_pytorch_zip,
         is_7z_archive,
-        extract_pickle_files,
-        analyze_zip_structure,
+        is_pytorch_zip,
     )
 
     findings = []
@@ -215,7 +210,7 @@ def scan_pickle_file(filepath: Path) -> list[Finding]:
     try:
         with open(filepath, "rb") as f:
             data = f.read()
-    except IOError as e:
+    except OSError as e:
         return [
             Finding(
                 severity=Severity.MEDIUM,
@@ -237,7 +232,7 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
     Returns:
         List of findings from internal pickle files
     """
-    from tensortrap.formats.pytorch_zip import extract_pickle_files, analyze_zip_structure
+    from tensortrap.formats.pytorch_zip import analyze_zip_structure, extract_pickle_files
 
     findings = []
 
@@ -260,7 +255,7 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
         findings.append(
             Finding(
                 severity=Severity.CRITICAL,
-                message=f"Path traversal detected in ZIP archive (ZipSlip)",
+                message="Path traversal detected in ZIP archive (ZipSlip)",
                 location=None,
                 details={
                     "suspicious_paths": zip_info["suspicious_paths"],

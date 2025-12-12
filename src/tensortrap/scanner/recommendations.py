@@ -5,7 +5,6 @@ Provides simple, actionable advice for users based on finding type and severity.
 
 from tensortrap.scanner.results import Severity
 
-
 # Recommendations by finding pattern (keyword matching on message)
 RECOMMENDATIONS = {
     # CRITICAL - Do not load
@@ -14,7 +13,6 @@ RECOMMENDATIONS = {
     "zipslip": "DO NOT LOAD. This archive contains path traversal attacks.",
     "reverse shell": "DO NOT LOAD. This file contains remote access code.",
     "dangerous yaml pattern": "DO NOT LOAD. Use yaml.safe_load() if you must parse this file.",
-
     # HIGH - Convert or verify source
     "dangerous import": "Convert to safetensors format or verify the model source.",
     "7z archive": "Extract and scan contents before loading.",
@@ -22,7 +20,6 @@ RECOMMENDATIONS = {
     "lambda layer": "Remove Lambda layers or verify code is safe before loading.",
     "embedded pickle": "Convert to a safer format without embedded pickle.",
     "external_data": "Verify external data paths before loading.",
-
     # MEDIUM - Caution
     "reduce opcode": "Normal for pickle models. Convert to safetensors for safer loading.",
     "build opcode": "Normal for pickle models. Convert to safetensors for safer loading.",
@@ -32,7 +29,6 @@ RECOMMENDATIONS = {
     "high entropy": "Potential obfuscation. Verify model source.",
     "pickle format detected": "Unexpected pickle file. Verify this is intentional.",
     "shell command": "Review YAML file for unintended command execution.",
-
     # LOW/INFO - Informational
     "pytorch zip": "No action needed - standard PyTorch format.",
     "no unsafe patterns": "No action needed.",
@@ -83,7 +79,5 @@ def add_recommendations(findings: list) -> list:
     """
     for finding in findings:
         if finding.recommendation is None:
-            finding.recommendation = get_recommendation(
-                finding.message, finding.severity
-            )
+            finding.recommendation = get_recommendation(finding.message, finding.severity)
     return findings

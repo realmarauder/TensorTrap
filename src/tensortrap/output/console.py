@@ -54,10 +54,7 @@ def _print_single_result(result: ScanResult, verbose: bool) -> None:
         status = "[red]THREATS DETECTED[/red]"
 
     console.print()
-    console.print(
-        f"[bold]{result.filepath}[/bold] "
-        f"[dim]({result.format})[/dim] - {status}"
-    )
+    console.print(f"[bold]{result.filepath}[/bold] [dim]({result.format})[/dim] - {status}")
 
     # File info if verbose
     if verbose:
@@ -89,7 +86,13 @@ def _print_single_result(result: ScanResult, verbose: bool) -> None:
     table.add_column("Action", no_wrap=False, style="cyan")
 
     # Sort by severity
-    severity_order = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
+    severity_order = [
+        Severity.CRITICAL,
+        Severity.HIGH,
+        Severity.MEDIUM,
+        Severity.LOW,
+        Severity.INFO,
+    ]
     sorted_findings = sorted(findings, key=lambda f: severity_order.index(f.severity))
 
     for finding in sorted_findings:
@@ -140,8 +143,9 @@ def _print_summary(results: list[ScanResult]) -> None:
             console.print("  " + ", ".join(parts))
 
 
-def _format_size(size: int) -> str:
+def _format_size(size_bytes: int) -> str:
     """Format file size in human-readable form."""
+    size: float = float(size_bytes)
     for unit in ["B", "KB", "MB", "GB"]:
         if size < 1024:
             return f"{size:.1f} {unit}"

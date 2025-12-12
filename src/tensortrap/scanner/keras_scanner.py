@@ -7,11 +7,9 @@ and suspicious patterns in HDF5 model files.
 
 import re
 from pathlib import Path
-from typing import Optional
 
-from tensortrap.scanner.results import Finding, Severity
 from tensortrap.scanner.pickle_scanner import scan_pickle
-
+from tensortrap.scanner.results import Finding, Severity
 
 # HDF5 magic number
 HDF5_MAGIC = b"\x89HDF\r\n\x1a\n"
@@ -53,7 +51,7 @@ def is_hdf5_file(filepath: Path) -> bool:
         with open(filepath, "rb") as f:
             magic = f.read(8)
             return magic == HDF5_MAGIC
-    except IOError:
+    except OSError:
         return False
 
 
@@ -85,7 +83,7 @@ def scan_keras(filepath: Path) -> list[Finding]:
     try:
         with open(filepath, "rb") as f:
             data = f.read()
-    except IOError as e:
+    except OSError as e:
         return [
             Finding(
                 severity=Severity.MEDIUM,
@@ -123,7 +121,7 @@ def scan_keras(filepath: Path) -> list[Finding]:
                 location=None,
                 details={
                     "description": "Lambda layers execute Python code on model load",
-                    "recommendation": "Avoid loading models with Lambda layers from untrusted sources",
+                    "recommendation": "Avoid Lambda layers from untrusted sources",
                 },
             )
         )
@@ -187,7 +185,7 @@ def _scan_for_pickle(data: bytes, filepath: Path) -> list[Finding]:
     return findings
 
 
-def _extract_pickle_region(data: bytes, start: int) -> Optional[bytes]:
+def _extract_pickle_region(data: bytes, start: int) -> bytes | None:
     """Extract a pickle region from HDF5 data.
 
     Args:
@@ -202,13 +200,13 @@ def _extract_pickle_region(data: bytes, start: int) -> Optional[bytes]:
     max_len = min(10 * 1024 * 1024, len(data) - start)
 
     for i in range(start, start + max_len):
-        if data[i:i+1] == b".":
+        if data[i : i + 1] == b".":
             # Verify this looks like a valid pickle ending
             # (STOP is the last opcode)
-            return data[start:i+1]
+            return data[start : i + 1]
 
     # If no STOP found, return first 64KB
-    return data[start:start + 65536]
+    return data[start : start + 65536]
 
 
 def _scan_config_patterns(data: bytes) -> list[Finding]:

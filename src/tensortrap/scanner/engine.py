@@ -2,8 +2,8 @@
 
 import hashlib
 import time
+from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Callable, Generator, Optional
 
 from tensortrap.formats.magic import detect_format as detect_by_magic
 from tensortrap.scanner.comfyui_scanner import scan_comfyui_workflow
@@ -103,7 +103,7 @@ def scan_file(filepath: Path, compute_hash: bool = True) -> ScanResult:
 def collect_files(
     dirpath: Path,
     recursive: bool = True,
-    extensions: Optional[set[str]] = None,
+    extensions: set[str] | None = None,
 ) -> list[Path]:
     """Collect all model files in a directory without scanning.
 
@@ -139,7 +139,7 @@ def collect_files(
 def scan_files_with_progress(
     files: list[Path],
     compute_hash: bool = True,
-    progress_callback: Optional[Callable[[Path, int, int], None]] = None,
+    progress_callback: Callable[[Path, int, int], None] | None = None,
 ) -> Generator[ScanResult, None, None]:
     """Scan files one at a time, yielding results for progress tracking.
 
@@ -161,7 +161,7 @@ def scan_files_with_progress(
 def scan_directory(
     dirpath: Path,
     recursive: bool = True,
-    extensions: Optional[set[str]] = None,
+    extensions: set[str] | None = None,
     compute_hash: bool = True,
 ) -> list[ScanResult]:
     """Scan all model files in a directory.
@@ -267,7 +267,7 @@ def _scan_by_format(filepath: Path, file_format: str) -> list[Finding]:
                 data = f.read(1024 * 1024)  # Read first 1MB for obfuscation check
             obfuscation_findings = scan_for_obfuscation(data)
             findings.extend(obfuscation_findings)
-        except IOError:
+        except OSError:
             pass
 
     # Add remediation recommendations to all findings
@@ -316,10 +316,11 @@ def _scan_unknown_format(filepath: Path) -> list[Finding]:
         # Route to appropriate scanner based on magic detection
         if detected_format == "pickle" and confidence in ("high", "medium"):
             protocol = details.get("protocol", "unknown")
+            msg = f"Pickle format detected by magic bytes (protocol {protocol})"
             findings.append(
                 Finding(
                     severity=Severity.MEDIUM,
-                    message=f"Pickle format detected by magic bytes (protocol {protocol}) - non-standard extension",
+                    message=f"{msg} - non-standard extension",
                     location=0,
                     details={"detected_by": "magic_bytes", "cve": "CVE-2025-1889"},
                 )
@@ -399,5 +400,5 @@ def _compute_sha256(filepath: Path) -> str:
             for chunk in iter(lambda: f.read(65536), b""):
                 sha256.update(chunk)
         return sha256.hexdigest()
-    except IOError:
+    except OSError:
         return ""

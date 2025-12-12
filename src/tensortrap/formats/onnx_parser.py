@@ -8,16 +8,15 @@ path traversal attacks (CVE-2024-27318, CVE-2024-5187).
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
 class ONNXInfo:
     """Information extracted from ONNX file."""
 
-    ir_version: Optional[int]
-    producer_name: Optional[str]
-    producer_version: Optional[str]
+    ir_version: int | None
+    producer_name: str | None
+    producer_version: str | None
     external_data_refs: list[str]
     has_path_traversal: bool
     suspicious_refs: list[str]
@@ -63,14 +62,16 @@ def _is_likely_real_path(s: str) -> bool:
 
     # Must not contain non-path special characters
     # Real paths only have: alphanumeric, /, \, ., _, -
-    invalid_chars = set(s) - set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/\\._-")
+    invalid_chars = set(s) - set(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/\\._-"
+    )
     if invalid_chars:
         return False
 
     return True
 
 
-def analyze_onnx(filepath: Path) -> tuple[Optional[ONNXInfo], Optional[str]]:
+def analyze_onnx(filepath: Path) -> tuple[ONNXInfo | None, str | None]:
     """Analyze an ONNX file for security issues.
 
     This performs pattern-based analysis without full protobuf parsing.
@@ -84,7 +85,7 @@ def analyze_onnx(filepath: Path) -> tuple[Optional[ONNXInfo], Optional[str]]:
     try:
         with open(filepath, "rb") as f:
             data = f.read()
-    except IOError as e:
+    except OSError as e:
         return None, f"Failed to read file: {e}"
 
     # Extract string-like data from binary
@@ -97,7 +98,9 @@ def analyze_onnx(filepath: Path) -> tuple[Optional[ONNXInfo], Optional[str]]:
 
     for s in strings:
         # Check if this looks like a file path (and not binary garbage)
-        if _is_likely_real_path(s) and ("/" in s or "\\" in s or s.endswith((".bin", ".weight", ".data"))):
+        if _is_likely_real_path(s) and (
+            "/" in s or "\\" in s or s.endswith((".bin", ".weight", ".data"))
+        ):
             external_refs.append(s)
 
             # Check for path traversal patterns
@@ -146,7 +149,7 @@ def _extract_strings(data: bytes, min_length: int = 4) -> list[str]:
     return strings
 
 
-def _extract_ir_version(data: bytes) -> Optional[int]:
+def _extract_ir_version(data: bytes) -> int | None:
     """Extract IR version from ONNX data.
 
     The IR version is typically the first field (field 1) as a varint.
@@ -169,7 +172,7 @@ def _extract_ir_version(data: bytes) -> Optional[int]:
     return None
 
 
-def _find_producer_name(strings: list[str]) -> Optional[str]:
+def _find_producer_name(strings: list[str]) -> str | None:
     """Find producer name in extracted strings.
 
     Args:

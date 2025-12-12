@@ -1,10 +1,9 @@
 """Result data structures for scan findings."""
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional
-import json
 
 
 class Severity(Enum):
@@ -23,9 +22,9 @@ class Finding:
 
     severity: Severity
     message: str
-    location: Optional[int] = None  # Byte offset in file
-    details: Optional[dict] = None
-    recommendation: Optional[str] = None  # Remediation advice
+    location: int | None = None  # Byte offset in file
+    details: dict | None = None
+    recommendation: str | None = None  # Remediation advice
 
     def to_dict(self) -> dict:
         """Convert finding to dictionary."""
@@ -52,12 +51,10 @@ class ScanResult:
     @property
     def is_safe(self) -> bool:
         """Check if the file is considered safe (no critical/high findings)."""
-        return not any(
-            f.severity in (Severity.CRITICAL, Severity.HIGH) for f in self.findings
-        )
+        return not any(f.severity in (Severity.CRITICAL, Severity.HIGH) for f in self.findings)
 
     @property
-    def max_severity(self) -> Optional[Severity]:
+    def max_severity(self) -> Severity | None:
         """Get the highest severity finding."""
         if not self.findings:
             return None

@@ -12,7 +12,6 @@ from pathlib import Path
 
 from tensortrap.scanner.results import Finding, Severity
 
-
 # Dangerous YAML tags that enable code execution
 DANGEROUS_YAML_TAGS = [
     # Python object instantiation
@@ -22,7 +21,6 @@ DANGEROUS_YAML_TAGS = [
     (r"!!python/module:", "Python module import", Severity.CRITICAL),
     (r"!!python/name:", "Python name reference", Severity.HIGH),
     (r"!!python/tuple:", "Python tuple (may contain objects)", Severity.MEDIUM),
-
     # Common exploit patterns
     (r"subprocess\.Popen", "Subprocess execution", Severity.CRITICAL),
     (r"os\.system", "OS command execution", Severity.CRITICAL),
@@ -34,7 +32,6 @@ DANGEROUS_YAML_TAGS = [
     (r"__import__", "Dynamic import", Severity.CRITICAL),
     (r"__reduce__", "Pickle reduce method", Severity.HIGH),
     (r"__reduce_ex__", "Pickle reduce_ex method", Severity.HIGH),
-
     # Network-related
     (r"socket\.socket", "Socket creation", Severity.HIGH),
     (r"urllib\.request", "URL request", Severity.MEDIUM),
@@ -82,9 +79,9 @@ def scan_yaml(filepath: Path) -> list[Finding]:
 
     # Read file content
     try:
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
             content = f.read()
-    except IOError as e:
+    except OSError as e:
         return [
             Finding(
                 severity=Severity.MEDIUM,
@@ -257,7 +254,7 @@ def _get_line_numbers(content: str, matches: list) -> list[int]:
     """
     line_numbers = []
     for match in matches[:10]:  # Limit to first 10
-        line_num = content[:match.start()].count("\n") + 1
+        line_num = content[: match.start()].count("\n") + 1
         line_numbers.append(line_num)
     return line_numbers
 

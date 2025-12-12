@@ -1,7 +1,6 @@
 """Command-line interface for TensorTrap."""
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -64,13 +63,13 @@ def scan(
         "--report/--no-report",
         help="Generate report files (txt, json, html, csv)",
     ),
-    report_dir: Optional[Path] = typer.Option(
+    report_dir: Path | None = typer.Option(
         None,
         "--report-dir",
         "-o",
         help="Directory to save reports (default: current directory)",
     ),
-    report_formats: Optional[str] = typer.Option(
+    report_formats: str | None = typer.Option(
         None,
         "--report-formats",
         "-f",
