@@ -91,8 +91,7 @@ def scan_onnx(filepath: Path) -> list[Finding]:
 
         # Info-level note about external data usage
         non_suspicious = [
-            ref for ref in onnx_info.external_data_refs
-            if ref not in onnx_info.suspicious_refs
+            ref for ref in onnx_info.external_data_refs if ref not in onnx_info.suspicious_refs
         ]
         if non_suspicious:
             findings.append(

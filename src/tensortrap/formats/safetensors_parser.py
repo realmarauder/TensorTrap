@@ -9,7 +9,7 @@ Safetensors format:
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -22,7 +22,7 @@ class SafetensorsHeader:
     raw_json: str
 
 
-def parse_header(filepath: Path) -> tuple[Optional[SafetensorsHeader], Optional[str]]:
+def parse_header(filepath: Path) -> tuple[SafetensorsHeader | None, str | None]:
     """Parse safetensors file header.
 
     Args:
@@ -78,13 +78,11 @@ def parse_header(filepath: Path) -> tuple[Optional[SafetensorsHeader], Optional[
                 raw_json=header_json,
             ), None
 
-    except IOError as e:
+    except OSError as e:
         return None, f"Failed to read file: {e}"
 
 
-def validate_tensor_offsets(
-    filepath: Path, header: SafetensorsHeader
-) -> list[tuple[str, str]]:
+def validate_tensor_offsets(filepath: Path, header: SafetensorsHeader) -> list[tuple[str, str]]:
     """Validate that tensor offsets are within file bounds.
 
     Args:
@@ -117,9 +115,13 @@ def validate_tensor_offsets(
         absolute_end = data_start + end
 
         if absolute_start > file_size:
-            errors.append((name, f"Tensor start offset ({absolute_start}) exceeds file size ({file_size})"))
+            errors.append(
+                (name, f"Tensor start offset ({absolute_start}) exceeds file size ({file_size})")
+            )
         if absolute_end > file_size:
-            errors.append((name, f"Tensor end offset ({absolute_end}) exceeds file size ({file_size})"))
+            errors.append(
+                (name, f"Tensor end offset ({absolute_end}) exceeds file size ({file_size})")
+            )
         if start > end:
             errors.append((name, f"Tensor start ({start}) > end ({end})"))
 

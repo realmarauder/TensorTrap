@@ -7,10 +7,9 @@ CVE-2024-21577 (eval() in custom nodes).
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from tensortrap.scanner.results import Finding, Severity
-
 
 # Known vulnerable node types (CVE-2024-21576, CVE-2024-21577)
 VULNERABLE_NODE_TYPES = {
@@ -61,7 +60,11 @@ SUSPICIOUS_INPUT_PATTERNS = [
     (r"subprocess", "Subprocess execution", Severity.CRITICAL),
     (r"open\s*\(", "File operation", Severity.HIGH),
     # Match requests.<method>( to avoid false positives like "requests. Any style"
-    (r"requests\.(get|post|put|delete|patch|head|options|session)\s*\(", "Network request", Severity.HIGH),
+    (
+        r"requests\.(get|post|put|delete|patch|head|options|session)\s*\(",
+        "Network request",
+        Severity.HIGH,
+    ),
     (r"urllib\.(request|parse)", "URL operation", Severity.HIGH),
     (r"socket\.(socket|connect|bind|listen)", "Socket operation", Severity.HIGH),
     (r"\\x[0-9a-fA-F]{2}", "Hex escape sequence", Severity.MEDIUM),
@@ -83,7 +86,7 @@ def scan_comfyui_workflow(filepath: Path) -> list[Finding]:
 
     # Read and parse JSON
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             content = f.read()
             workflow = json.loads(content)
     except json.JSONDecodeError as e:
@@ -95,7 +98,7 @@ def scan_comfyui_workflow(filepath: Path) -> list[Finding]:
                 details={"error": str(e)},
             )
         ]
-    except IOError as e:
+    except OSError as e:
         return [
             Finding(
                 severity=Severity.MEDIUM,

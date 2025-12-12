@@ -13,7 +13,6 @@ import math
 import re
 import zlib
 from dataclasses import dataclass
-from typing import Optional
 
 from tensortrap.scanner.results import Finding, Severity
 
@@ -83,7 +82,9 @@ def detect_base64(data: bytes) -> list[dict]:
         # Try to decode
         try:
             # Add padding if needed
-            padded = candidate + b"=" * (4 - len(candidate) % 4) if len(candidate) % 4 else candidate
+            padded = (
+                candidate + b"=" * (4 - len(candidate) % 4) if len(candidate) % 4 else candidate
+            )
             decoded = base64.b64decode(padded, validate=True)
 
             # Check if decoded content looks suspicious
@@ -105,15 +106,17 @@ def detect_base64(data: bytes) -> list[dict]:
                 is_suspicious = any(p in decoded for p in suspicious_patterns)
 
                 if is_suspicious or (decoded_entropy > 4.0 and decoded_entropy < 7.0):
-                    regions.append({
-                        "type": "base64",
-                        "position": match.start(),
-                        "length": len(candidate),
-                        "decoded_length": len(decoded),
-                        "decoded_entropy": decoded_entropy,
-                        "suspicious": is_suspicious,
-                        "preview": decoded[:50].hex() if is_suspicious else None,
-                    })
+                    regions.append(
+                        {
+                            "type": "base64",
+                            "position": match.start(),
+                            "length": len(candidate),
+                            "decoded_length": len(decoded),
+                            "decoded_entropy": decoded_entropy,
+                            "suspicious": is_suspicious,
+                            "preview": decoded[:50].hex() if is_suspicious else None,
+                        }
+                    )
 
         except Exception:
             pass  # Not valid base64
@@ -149,14 +152,16 @@ def detect_compressed(data: bytes) -> list[dict]:
 
             # Try to decompress
             try:
-                decompressed = zlib.decompress(data[pos:pos + 65536])
+                decompressed = zlib.decompress(data[pos : pos + 65536])
                 if len(decompressed) > 20:
-                    regions.append({
-                        "type": "zlib",
-                        "position": pos,
-                        "compression": compression_type,
-                        "decompressed_size": len(decompressed),
-                    })
+                    regions.append(
+                        {
+                            "type": "zlib",
+                            "position": pos,
+                            "compression": compression_type,
+                            "decompressed_size": len(decompressed),
+                        }
+                    )
             except Exception:
                 pass
 
@@ -165,10 +170,12 @@ def detect_compressed(data: bytes) -> list[dict]:
     # Look for gzip magic
     gzip_pos = data.find(b"\x1f\x8b\x08")
     if gzip_pos != -1:
-        regions.append({
-            "type": "gzip",
-            "position": gzip_pos,
-        })
+        regions.append(
+            {
+                "type": "gzip",
+                "position": gzip_pos,
+            }
+        )
 
     return regions
 
@@ -199,13 +206,15 @@ def detect_hex_strings(data: bytes) -> list[dict]:
             is_suspicious = any(p in decoded for p in suspicious_patterns)
 
             if is_suspicious or len(decoded) > 50:
-                regions.append({
-                    "type": "hex",
-                    "position": match.start(),
-                    "length": len(candidate),
-                    "decoded_length": len(decoded),
-                    "suspicious": is_suspicious,
-                })
+                regions.append(
+                    {
+                        "type": "hex",
+                        "position": match.start(),
+                        "length": len(candidate),
+                        "decoded_length": len(decoded),
+                        "suspicious": is_suspicious,
+                    }
+                )
 
         except Exception:
             pass
@@ -233,11 +242,13 @@ def detect_unicode_escape(data: bytes) -> list[dict]:
 
     for pattern, escape_type in escape_patterns:
         for match in re.finditer(pattern, data):
-            regions.append({
-                "type": escape_type,
-                "position": match.start(),
-                "length": len(match.group(0)),
-            })
+            regions.append(
+                {
+                    "type": escape_type,
+                    "position": match.start(),
+                    "length": len(match.group(0)),
+                }
+            )
 
     return regions
 
@@ -291,7 +302,7 @@ def scan_for_obfuscation(data: bytes) -> list[Finding]:
         findings.append(
             Finding(
                 severity=Severity.MEDIUM,
-                message=f"Very high entropy ({analysis.entropy:.2f}) - possible encryption/compression",
+                message=f"Very high entropy ({analysis.entropy:.2f}) - possible encryption",
                 location=None,
                 details={
                     "entropy": analysis.entropy,
@@ -301,12 +312,15 @@ def scan_for_obfuscation(data: bytes) -> list[Finding]:
         )
 
     # Base64 obfuscation
-    suspicious_b64 = [r for r in analysis.suspicious_regions if r.get("type") == "base64" and r.get("suspicious")]
+    suspicious_b64 = [
+        r for r in analysis.suspicious_regions if r.get("type") == "base64" and r.get("suspicious")
+    ]
     if suspicious_b64:
+        count = len(suspicious_b64)
         findings.append(
             Finding(
                 severity=Severity.HIGH,
-                message=f"Suspicious base64-encoded payload detected ({len(suspicious_b64)} region(s))",
+                message=f"Suspicious base64-encoded payload detected ({count} region(s))",
                 location=suspicious_b64[0].get("position"),
                 details={
                     "regions": suspicious_b64[:5],
@@ -331,12 +345,15 @@ def scan_for_obfuscation(data: bytes) -> list[Finding]:
         )
 
     # Hex string obfuscation
-    suspicious_hex = [r for r in analysis.suspicious_regions if r.get("type") == "hex" and r.get("suspicious")]
+    suspicious_hex = [
+        r for r in analysis.suspicious_regions if r.get("type") == "hex" and r.get("suspicious")
+    ]
     if suspicious_hex:
+        count = len(suspicious_hex)
         findings.append(
             Finding(
                 severity=Severity.HIGH,
-                message=f"Suspicious hex-encoded payload detected ({len(suspicious_hex)} region(s))",
+                message=f"Suspicious hex-encoded payload detected ({count} region(s))",
                 location=suspicious_hex[0].get("position") if suspicious_hex else None,
                 details={
                     "regions": suspicious_hex[:5],

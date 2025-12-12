@@ -4,10 +4,8 @@ PyTorch saves models as ZIP archives containing pickle files.
 This module extracts and analyzes the internal structure.
 """
 
-import io
 import zipfile
 from pathlib import Path
-from typing import Optional
 
 
 def is_pytorch_zip(filepath: Path) -> bool:
@@ -23,7 +21,7 @@ def is_pytorch_zip(filepath: Path) -> bool:
         with open(filepath, "rb") as f:
             magic = f.read(4)
             return magic == b"PK\x03\x04" or magic == b"PK\x05\x06"
-    except IOError:
+    except OSError:
         return False
 
 
@@ -40,7 +38,7 @@ def is_7z_archive(filepath: Path) -> bool:
         with open(filepath, "rb") as f:
             magic = f.read(6)
             return magic == b"7z\xbc\xaf\x27\x1c"
-    except IOError:
+    except OSError:
         return False
 
 
@@ -72,7 +70,7 @@ def extract_pickle_files(filepath: Path) -> list[tuple[str, bytes]]:
                         pickle_files.append((name, data))
                     except Exception:
                         pass
-    except (zipfile.BadZipFile, IOError):
+    except (OSError, zipfile.BadZipFile):
         pass
 
     return pickle_files
@@ -116,7 +114,7 @@ def analyze_zip_structure(filepath: Path) -> dict:
                 if zi.filename.startswith(("/", "C:", "\\", "~")):
                     info["suspicious_paths"].append(zi.filename)
 
-    except (zipfile.BadZipFile, IOError) as e:
+    except (OSError, zipfile.BadZipFile) as e:
         info["error"] = str(e)
 
     return info

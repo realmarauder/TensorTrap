@@ -122,6 +122,7 @@ def detect_format(filepath) -> str:
         Format name string
     """
     from pathlib import Path
+
     from tensortrap.formats.magic import detect_format as detect_by_magic
 
     filepath = Path(filepath)

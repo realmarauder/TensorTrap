@@ -7,13 +7,11 @@ including Jinja template injection in chat templates (CVE-2024-34359).
 from pathlib import Path
 
 from tensortrap.formats.gguf_parser import (
-    GGUF_MAGIC,
     SUPPORTED_VERSIONS,
     get_chat_template,
     parse_header,
 )
 from tensortrap.scanner.results import Finding, Severity
-
 
 # Sanity limits
 MAX_REASONABLE_TENSORS = 100_000
@@ -213,12 +211,13 @@ def _scan_metadata(metadata: dict) -> list[Finding]:
         if isinstance(value, str) and len(value) > 0:
             # Very long strings might be payloads
             if len(value) > 1_000_000:  # 1MB
+                size = len(value)
                 findings.append(
                     Finding(
                         severity=Severity.MEDIUM,
-                        message=f"Unusually large metadata value for key '{key}': {len(value):,} bytes",
+                        message=f"Unusually large metadata value for key '{key}': {size:,} bytes",
                         location=None,
-                        details={"key": key, "size": len(value)},
+                        details={"key": key, "size": size},
                     )
                 )
 
