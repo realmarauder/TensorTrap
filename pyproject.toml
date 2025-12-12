@@ -6,7 +6,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "M2 Dynamics", email = "contact@m2dynamics.us"}
+    {name = "realmarauder", email = "smichael.us@gmail.com"}
 ]
 keywords = ["security", "ai", "ml", "machine-learning", "scanner", "pickle", "safetensors"]
 classifiers = [
