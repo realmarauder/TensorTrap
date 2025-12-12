@@ -149,58 +149,30 @@ def _is_valid_pickle(data: bytes, pos: int) -> bool:
                 return False
         return True
 
-    # Protocol 2 and 3: Validate the next opcode is valid for this protocol
+    # Protocol 2 and 3: Only accept GLOBAL opcode with proper structure
+    # This is the most common malicious pattern (importing os, subprocess, etc.)
+    # Other opcodes like EMPTY_DICT (}), EMPTY_LIST (]) are single ASCII chars
+    # that appear too frequently in compressed media data (JPEGs, video codecs)
     if protocol in (2, 3):
-        # Opcodes 0x8C-0x95 are protocol 4+ only - reject these for protocol 2/3
-        # 0x8C = SHORT_BINUNICODE, 0x8D = BINUNICODE8, 0x8E = BINBYTES8,
-        # 0x8F = EMPTY_SET, 0x90 = ADDITEMS, 0x91 = FROZENSET, 0x92 = NEWOBJ_EX,
-        # 0x93 = STACK_GLOBAL, 0x94 = MEMOIZE, 0x95 = FRAME
-        if 0x8C <= next_byte <= 0x95:
+        # Only accept GLOBAL (c = 0x63) - the most common malicious opcode
+        if next_byte != 0x63:
             return False
 
-        # Valid protocol 2/3 opcodes in 0x80+ range: 0x80-0x8B
-        # 0x80=PROTO, 0x81=NEWOBJ, 0x82=EXT1, 0x83=EXT2, 0x84=EXT4,
-        # 0x85=TUPLE1, 0x86=TUPLE2, 0x87=TUPLE3, 0x88=NEWTRUE, 0x89=NEWFALSE,
-        # 0x8A=LONG1, 0x8B=LONG4
-
-        # For stronger validation, require a structure check for GLOBAL opcode
-        if next_byte == 0x63:  # GLOBAL (c) - most common malicious start
-            # GLOBAL is followed by "module\nname\n"
-            if pos + 10 >= len(data):
+        # GLOBAL is followed by "module\nname\n"
+        if pos + 10 >= len(data):
+            return False
+        found_newline = False
+        for i in range(pos + 3, min(pos + 258, len(data))):
+            b = data[i]
+            if b == 0x0A:  # newline
+                found_newline = True
+                break
+            # Must be printable ASCII (letters, digits, underscore, dot)
+            if not (0x2E <= b <= 0x39 or 0x41 <= b <= 0x5A or 0x5F == b or 0x61 <= b <= 0x7A):
                 return False
-            found_newline = False
-            for i in range(pos + 3, min(pos + 258, len(data))):
-                b = data[i]
-                if b == 0x0A:  # newline
-                    found_newline = True
-                    break
-                # Must be printable ASCII (letters, digits, underscore, dot)
-                if not (0x2E <= b <= 0x39 or 0x41 <= b <= 0x5A or 0x5F == b or 0x61 <= b <= 0x7A):
-                    return False
-            if not found_newline:
-                return False
-            return True
-
-        # Accept other valid protocol 2/3 opcodes with basic structure check
-        # These are less common as starting opcodes but still valid
-        valid_proto23_start_opcodes = {
-            0x28,  # MARK (()
-            0x29,  # EMPTY_TUPLE ())
-            0x4E,  # NONE (N)
-            0x5D,  # EMPTY_LIST (])
-            0x7D,  # EMPTY_DICT (})
-            0x81,  # NEWOBJ
-            0x85,  # TUPLE1
-            0x86,  # TUPLE2
-            0x87,  # TUPLE3
-            0x88,  # NEWTRUE
-            0x89,  # NEWFALSE
-        }
-
-        if next_byte in valid_proto23_start_opcodes:
-            return True
-
-        return False
+        if not found_newline:
+            return False
+        return True
 
     return False
 
