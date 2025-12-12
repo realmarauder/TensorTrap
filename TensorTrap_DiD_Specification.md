@@ -109,16 +109,20 @@ PICKLE_SIGNATURES = [
     b"\x80\x05",  # Protocol 5
 ]
 
-# Image extensions we should scan for polyglot attacks
+# Image extensions to scan for polyglot attacks
 IMAGE_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
     ".tiff", ".tif", ".ico", ".avif", ".heic", ".heif",
 }
 
-# Video extensions (future expansion)
+# Video extensions to scan for polyglot attacks
 VIDEO_EXTENSIONS = {
-    ".mp4", ".webm", ".avi", ".mov", ".mkv", ".gif",
+    ".mp4", ".webm", ".avi", ".mov", ".mkv", ".m4v", ".flv",
+    ".wmv", ".ogv", ".3gp", ".ts", ".mts", ".m2ts",
 }
+
+# Combined media extensions
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 
 def scan_polyglot(filepath: Path) -> list[Finding]:
@@ -144,6 +148,11 @@ def scan_polyglot(filepath: Path) -> list[Finding]:
     if ext in IMAGE_EXTENSIONS:
         findings.extend(_check_archive_in_image(filepath))
         findings.extend(_check_trailing_data(filepath))
+
+    # For video files, check for appended archives and embedded data
+    if ext in VIDEO_EXTENSIONS:
+        findings.extend(_check_archive_in_video(filepath))
+        findings.extend(_check_video_metadata(filepath))
 
     # For SVG files, check for embedded scripts
     if ext == ".svg":
@@ -478,81 +487,232 @@ def _check_metadata_payloads(filepath: Path) -> list[Finding]:
     return findings
 
 
+def _check_archive_in_video(filepath: Path) -> list[Finding]:
+    """Detect archives appended to video files."""
+    findings = []
+
+    try:
+        with open(filepath, "rb") as f:
+            # Read first chunk for header validation
+            header = f.read(32)
+
+            # Seek to end and read last portion for appended data
+            f.seek(0, 2)  # End of file
+            file_size = f.tell()
+
+            # Read last 64KB for appended archive detection
+            read_size = min(65536, file_size)
+            f.seek(-read_size, 2)
+            tail = f.read()
+    except IOError:
+        return findings
+
+    # Check for archives in tail of video file
+    for archive_type, signature in ARCHIVE_SIGNATURES.items():
+        pos = tail.find(signature)
+        if pos >= 0:
+            actual_pos = file_size - read_size + pos
+            findings.append(Finding(
+                severity=Severity.CRITICAL,
+                message=f"Archive appended to video: {archive_type.upper()} at offset {actual_pos}",
+                location=actual_pos,
+                details={
+                    "technique": "archive_in_video",
+                    "archive_type": archive_type,
+                    "archive_offset": actual_pos,
+                    "warning": "May contain malicious pickle files",
+                },
+            ))
+            break
+
+    # Check for pickle in tail
+    for pickle_sig in PICKLE_SIGNATURES:
+        pos = tail.find(pickle_sig)
+        if pos >= 0:
+            actual_pos = file_size - read_size + pos
+            findings.append(Finding(
+                severity=Severity.CRITICAL,
+                message=f"Pickle data appended to video at offset {actual_pos}",
+                location=actual_pos,
+                details={
+                    "technique": "pickle_in_video",
+                    "pickle_offset": actual_pos,
+                    "protocol": pickle_sig[1],
+                },
+            ))
+            break
+
+    return findings
+
+
+def _check_video_metadata(filepath: Path) -> list[Finding]:
+    """Check video metadata for suspicious payloads."""
+    findings = []
+
+    try:
+        with open(filepath, "rb") as f:
+            # Read first 1MB which should contain most metadata
+            data = f.read(1024 * 1024)
+    except IOError:
+        return findings
+
+    ext = filepath.suffix.lower()
+
+    # Video format-specific checks
+    # MP4/M4V: Check for suspicious atoms
+    if ext in {".mp4", ".m4v", ".mov"}:
+        # Look for suspicious strings in metadata atoms
+        suspicious_atoms = [
+            (rb"<\?php", "php_code", Severity.CRITICAL),
+            (rb"eval\s*\(", "eval_call", Severity.CRITICAL),
+            (rb"exec\s*\(", "exec_call", Severity.CRITICAL),
+            (rb"import\s+os", "python_import", Severity.HIGH),
+            (rb"subprocess", "subprocess_ref", Severity.HIGH),
+            (rb"__import__", "dynamic_import", Severity.HIGH),
+            (rb"<script", "script_tag", Severity.HIGH),
+        ]
+
+        for pattern, technique, severity in suspicious_atoms:
+            match = re.search(pattern, data, re.IGNORECASE)
+            if match:
+                findings.append(Finding(
+                    severity=severity,
+                    message=f"Suspicious pattern in video metadata: {technique}",
+                    location=match.start(),
+                    details={
+                        "technique": f"video_metadata_{technique}",
+                        "offset": match.start(),
+                    },
+                ))
+
+    # MKV: Check for suspicious attachments indicator
+    if ext == ".mkv":
+        # MKV uses EBML format - look for attachment element
+        if b"\x19\x41\xa4\x69" in data:  # Attachments element ID
+            findings.append(Finding(
+                severity=Severity.MEDIUM,
+                message="MKV file contains attachments - review manually",
+                location=data.find(b"\x19\x41\xa4\x69"),
+                details={
+                    "technique": "mkv_attachments",
+                    "warning": "Attachments may contain malicious files",
+                },
+            ))
+
+    return findings
+
+
 # Exported extensions for engine integration
-POLYGLOT_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 ```
 
 ### 2. Engine Integration
 
-Update `scanner/engine.py` to include polyglot scanning:
+Update `scanner/engine.py` to include polyglot scanning **by default on all files**:
 
 ```python
 # Add to imports
-from tensortrap.scanner.polyglot_scanner import scan_polyglot, POLYGLOT_EXTENSIONS
+from tensortrap.scanner.polyglot_scanner import scan_polyglot, MEDIA_EXTENSIONS
 
-# Update FORMAT_EXTENSIONS in patterns.py to include image extensions
-# (only for polyglot scanning, not full model scanning)
+# Update FORMAT_EXTENSIONS in patterns.py to include all media extensions
+FORMAT_EXTENSIONS: dict[str, str] = {
+    # ... existing model formats ...
 
-# Add polyglot check in _scan_by_format or create new scan mode
-def scan_file(filepath: Path, compute_hash: bool = True, check_polyglot: bool = True) -> ScanResult:
-    """Scan a single file for security issues.
+    # Image formats (polyglot scanning)
+    ".png": "image",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".gif": "image",
+    ".webp": "image",
+    ".bmp": "image",
+    ".svg": "svg",
+    ".tiff": "image",
+    ".tif": "image",
+    ".ico": "image",
+    ".avif": "image",
+    ".heic": "image",
+    ".heif": "image",
 
-    Args:
-        filepath: Path to file to scan
-        compute_hash: Whether to compute SHA-256 hash
-        check_polyglot: Whether to check for polyglot/disguised threats
-    """
-    # ... existing code ...
+    # Video formats (polyglot scanning)
+    ".mp4": "video",
+    ".webm": "video",
+    ".avi": "video",
+    ".mov": "video",
+    ".mkv": "video",
+    ".m4v": "video",
+    ".flv": "video",
+    ".wmv": "video",
+    ".ogv": "video",
+    ".3gp": "video",
+    ".ts": "video",
+    ".mts": "video",
+    ".m2ts": "video",
+}
 
-    # Add polyglot check for all files
-    if check_polyglot:
-        polyglot_findings = scan_polyglot(filepath)
-        findings.extend(polyglot_findings)
+# Update _scan_by_format to handle media files
+def _scan_by_format(filepath: Path, file_format: str) -> list[Finding]:
+    """Run the appropriate scanner for a file format."""
+    findings = []
+
+    # Existing model format scanning...
+    if file_format == "pickle":
+        findings.extend(scan_pickle_file(filepath))
+    # ... other formats ...
+
+    # Always run polyglot scanner on media files
+    elif file_format in ("image", "video", "svg"):
+        findings.extend(scan_polyglot(filepath))
+
+    # Run polyglot checks on ALL files (catches disguised files)
+    # This is always-on, no flag needed
+    polyglot_findings = scan_polyglot(filepath)
+    findings.extend(polyglot_findings)
+
+    return findings
 ```
 
-### 3. CLI Flag
-
-Add `--media` or `--full` flag to scan image/video files for polyglot threats:
-
-```bash
-# Scan only AI model files (default)
-tensortrap scan ~/Models
-
-# Include image/video files for polyglot detection
-tensortrap scan ~/Models --media
-
-# Full scan of everything
-tensortrap scan ~/Downloads --full
-```
+**Key change**: Polyglot scanning is **always enabled** - no opt-in flag required. This ensures disguised threats are caught regardless of file extension.
 
 ---
 
-## New File Extensions
+## New File Extensions (Always Scanned)
 
-### Media Files to Scan (with --media flag)
+### Image Files
 
 | Extension | Format | Threat Type |
 |-----------|--------|-------------|
-| .png | PNG image | Polyglot, metadata |
-| .jpg/.jpeg | JPEG image | Polyglot, EXIF payload |
+| .png | PNG image | Polyglot, trailing data, metadata |
+| .jpg/.jpeg | JPEG image | Polyglot, EXIF payload, trailing data |
 | .gif | GIF image | Polyglot, trailing data |
 | .webp | WebP image | Polyglot, metadata |
-| .svg | SVG vector | JavaScript injection |
+| .svg | SVG vector | JavaScript injection, XSS |
 | .bmp | Bitmap | Polyglot |
 | .tiff/.tif | TIFF image | EXIF payload |
 | .ico | Icon | Polyglot |
+| .avif | AVIF image | Polyglot, metadata |
+| .heic/.heif | HEIF image | Polyglot, metadata |
 
-### Video Files (future consideration)
+### Video Files
 
 | Extension | Format | Threat Type |
 |-----------|--------|-------------|
-| .mp4 | MPEG-4 | Metadata, embedded data |
-| .webm | WebM | Metadata |
-| .mkv | Matroska | Attachments |
+| .mp4 | MPEG-4 | Appended archives, metadata payloads |
+| .m4v | MPEG-4 Video | Appended archives, metadata payloads |
+| .mov | QuickTime | Appended archives, metadata payloads |
+| .webm | WebM | Appended archives, metadata |
+| .mkv | Matroska | Attachments, appended archives |
+| .avi | AVI | Appended archives |
+| .flv | Flash Video | Appended archives |
+| .wmv | Windows Media | Appended archives |
+| .ogv | Ogg Video | Appended archives |
+| .3gp | 3GPP | Appended archives |
+| .ts/.mts/.m2ts | MPEG Transport | Appended archives |
 
 ---
 
-## Updated CLI Structure
+## CLI Structure (No Changes Needed)
+
+Polyglot scanning is always-on, so no new flags are required:
 
 ```
 tensortrap
@@ -563,10 +723,10 @@ tensortrap
 │   ├── --no-hash
 │   ├── --report
 │   ├── --report-dir
-│   ├── --report-formats
-│   ├── --media          # NEW - Include media files for polyglot scanning
-│   └── --full           # NEW - Scan all supported files
+│   └── --report-formats
 ```
+
+All media files in scanned directories will automatically be checked for polyglot threats.
 
 ---
 
@@ -622,7 +782,7 @@ sudo apt install yara rkhunter clamav clamav-daemon
 sudo freshclam
 
 # Run comprehensive scan
-tensortrap scan ~/Models --media        # AI models + polyglot detection
+tensortrap scan ~/Models ~/Downloads    # AI models + media polyglot detection (always-on)
 yara -r /path/to/rules ~/Downloads      # Pattern matching
 rkhunter --check                        # System integrity
 clamscan -r ~/Downloads                 # General malware
@@ -710,6 +870,41 @@ def test_exif_payload(tmp_path):
 
     findings = scan_polyglot(jpeg_file)
     assert any("metadata" in f.message.lower() for f in findings)
+
+def test_video_with_appended_archive(tmp_path):
+    """ZIP archive appended to video file is detected."""
+    video_file = tmp_path / "video.mp4"
+    video_file.write_bytes(VALID_MP4_BYTES + b"PK\x03\x04...")
+
+    findings = scan_polyglot(video_file)
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+    assert any("archive appended" in f.message.lower() for f in findings)
+
+def test_video_with_appended_pickle(tmp_path):
+    """Pickle data appended to video file is detected."""
+    video_file = tmp_path / "video.mp4"
+    video_file.write_bytes(VALID_MP4_BYTES + b"\x80\x04\x95...")
+
+    findings = scan_polyglot(video_file)
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+    assert any("pickle" in f.message.lower() for f in findings)
+
+def test_mkv_with_attachments(tmp_path):
+    """MKV with attachments is flagged for review."""
+    mkv_file = tmp_path / "video.mkv"
+    # Write MKV with attachment element
+
+    findings = scan_polyglot(mkv_file)
+    assert any(f.severity == Severity.MEDIUM for f in findings)
+    assert any("attachment" in f.message.lower() for f in findings)
+
+def test_clean_video_no_findings(tmp_path):
+    """Valid video file produces no findings."""
+    video_file = tmp_path / "clean.mp4"
+    video_file.write_bytes(VALID_MP4_BYTES)
+
+    findings = scan_polyglot(video_file)
+    assert len(findings) == 0
 ```
 
 ---
@@ -717,25 +912,30 @@ def test_exif_payload(tmp_path):
 ## Implementation Priority
 
 1. **Core polyglot scanner** (`scanner/polyglot_scanner.py`)
-   - Extension mismatch detection
+   - Extension mismatch detection (highest priority)
    - Archive-in-image detection
+   - Archive-in-video detection
    - SVG script detection
+   - Metadata payload detection
 
 2. **Engine integration**
-   - Add `--media` CLI flag
-   - Integrate polyglot scanner into scan flow
+   - Add media extensions to FORMAT_EXTENSIONS
+   - Integrate polyglot scanner into scan flow (always-on)
+   - No new CLI flags needed
 
-3. **README security stack section**
-   - Document complementary tools
-   - Add quick setup guide
+3. **README updates**
+   - Add Defense in Depth section
+   - Document security stack recommendations
+   - Update "What We Detect" section with media/polyglot info
 
 4. **Testing**
-   - Create test fixtures (polyglot files, malicious SVGs)
+   - Create test fixtures (polyglot files, malicious SVGs, video with appended data)
    - Unit tests for each detection type
+   - False positive testing with legitimate media files
 
 5. **Documentation**
    - Update README with new capabilities
-   - Document `--media` flag usage
+   - Add examples of polyglot detection output
 
 ---
 
@@ -751,8 +951,8 @@ No new dependencies required. The polyglot scanner uses only standard library mo
 ## Success Criteria
 
 1. **Detection rate**: Catches all documented polyglot techniques
-2. **False positive rate**: < 1% on legitimate image files
-3. **Performance**: Adds < 100ms overhead per file scanned
+2. **False positive rate**: < 1% on legitimate media files
+3. **Performance**: Adds < 100ms overhead per media file scanned
 4. **Usability**: Clear, actionable findings with severity levels
 5. **Documentation**: README includes security stack recommendations
 
@@ -763,6 +963,8 @@ No new dependencies required. The polyglot scanner uses only standard library mo
 1. Start with `_check_extension_mismatch()` - this is the highest-value detection
 2. SVG scanning is straightforward regex - implement second
 3. Archive-in-image requires careful offset detection to avoid false positives
-4. Trailing data detection needs format-specific end markers
-5. Metadata payload detection should focus on obvious code patterns, not be overly aggressive
-6. The `--media` flag should be opt-in to avoid scanning users' entire photo libraries by default
+4. Video scanning reads only header + tail, not entire file (performance)
+5. Trailing data detection needs format-specific end markers
+6. Metadata payload detection should focus on obvious code patterns, not be overly aggressive
+7. MKV attachment detection is informational (MEDIUM) since attachments have legitimate uses
+8. Polyglot scanning is always-on by default for comprehensive protection
