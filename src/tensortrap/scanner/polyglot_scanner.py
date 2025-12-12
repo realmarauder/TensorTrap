@@ -102,6 +102,11 @@ def _is_valid_pickle(data: bytes, pos: int) -> bool:
     This reduces false positives by ensuring the 2-byte protocol marker
     is actually part of a real pickle stream, not random binary data.
 
+    We validate:
+    - Protocol 4/5: FRAME opcode with reasonable length, followed by valid opcode
+    - Protocol 2/3: Valid protocol 2/3 opcode (NOT protocol 4+ only opcodes)
+                    followed by proper structure for that opcode
+
     Args:
         data: The full data buffer
         pos: Position of the pickle signature (\\x80\\xNN)
@@ -113,22 +118,89 @@ def _is_valid_pickle(data: bytes, pos: int) -> bool:
     if pos + 2 >= len(data):
         return False
 
-    # For protocol 4+, there may be a FRAME opcode with length
-    # For protocol 2-3, the next byte should be a valid opcode
+    protocol = data[pos + 1]
     next_byte = data[pos + 2]
 
-    if next_byte in VALID_PICKLE_OPCODES:
-        # Additional validation: if it's FRAME, check structure
-        if next_byte == 0x95:  # FRAME opcode
-            # FRAME is followed by 8-byte length
-            if pos + 10 >= len(data):
-                return False
-            # Frame length should be reasonable (not garbage)
-            frame_len = int.from_bytes(data[pos + 3 : pos + 11], "little")
-            # Reasonable frame size check (less than 10GB)
-            if frame_len > 10_000_000_000:
+    # Protocol 4 and 5: Expect FRAME opcode (0x95) with valid structure
+    if protocol >= 4:
+        if next_byte != 0x95:  # Must be FRAME
+            return False
+        # FRAME is followed by 8-byte length
+        if pos + 11 >= len(data):
+            return False
+        frame_len = int.from_bytes(data[pos + 3 : pos + 11], "little")
+        # Frame length must be reasonable (between 1 byte and 100MB for embedded pickle)
+        if frame_len < 1 or frame_len > 100_000_000:
+            return False
+        # Check that byte after frame header is a valid opcode
+        if pos + 11 < len(data):
+            opcode_after_frame = data[pos + 11]
+            # Must be a common starting opcode
+            if opcode_after_frame not in {
+                0x63,  # GLOBAL (c)
+                0x7D,  # EMPTY_DICT (})
+                0x5D,  # EMPTY_LIST (])
+                0x29,  # EMPTY_TUPLE ())
+                0x28,  # MARK (()
+                0x8C,  # SHORT_BINUNICODE
+                0x89,  # NEWOBJ_EX
+                0x81,  # NEWOBJ
+            }:
                 return False
         return True
+
+    # Protocol 2 and 3: Validate the next opcode is valid for this protocol
+    if protocol in (2, 3):
+        # Opcodes 0x8C-0x95 are protocol 4+ only - reject these for protocol 2/3
+        # 0x8C = SHORT_BINUNICODE, 0x8D = BINUNICODE8, 0x8E = BINBYTES8,
+        # 0x8F = EMPTY_SET, 0x90 = ADDITEMS, 0x91 = FROZENSET, 0x92 = NEWOBJ_EX,
+        # 0x93 = STACK_GLOBAL, 0x94 = MEMOIZE, 0x95 = FRAME
+        if 0x8C <= next_byte <= 0x95:
+            return False
+
+        # Valid protocol 2/3 opcodes in 0x80+ range: 0x80-0x8B
+        # 0x80=PROTO, 0x81=NEWOBJ, 0x82=EXT1, 0x83=EXT2, 0x84=EXT4,
+        # 0x85=TUPLE1, 0x86=TUPLE2, 0x87=TUPLE3, 0x88=NEWTRUE, 0x89=NEWFALSE,
+        # 0x8A=LONG1, 0x8B=LONG4
+
+        # For stronger validation, require a structure check for GLOBAL opcode
+        if next_byte == 0x63:  # GLOBAL (c) - most common malicious start
+            # GLOBAL is followed by "module\nname\n"
+            if pos + 10 >= len(data):
+                return False
+            found_newline = False
+            for i in range(pos + 3, min(pos + 258, len(data))):
+                b = data[i]
+                if b == 0x0A:  # newline
+                    found_newline = True
+                    break
+                # Must be printable ASCII (letters, digits, underscore, dot)
+                if not (0x2E <= b <= 0x39 or 0x41 <= b <= 0x5A or 0x5F == b or 0x61 <= b <= 0x7A):
+                    return False
+            if not found_newline:
+                return False
+            return True
+
+        # Accept other valid protocol 2/3 opcodes with basic structure check
+        # These are less common as starting opcodes but still valid
+        valid_proto23_start_opcodes = {
+            0x28,  # MARK (()
+            0x29,  # EMPTY_TUPLE ())
+            0x4E,  # NONE (N)
+            0x5D,  # EMPTY_LIST (])
+            0x7D,  # EMPTY_DICT (})
+            0x81,  # NEWOBJ
+            0x85,  # TUPLE1
+            0x86,  # TUPLE2
+            0x87,  # TUPLE3
+            0x88,  # NEWTRUE
+            0x89,  # NEWFALSE
+        }
+
+        if next_byte in valid_proto23_start_opcodes:
+            return True
+
+        return False
 
     return False
 

@@ -193,7 +193,10 @@ class TestArchiveInImage:
     def test_pickle_embedded_in_image(self, tmp_path):
         """Pickle data embedded in image is detected."""
         filepath = tmp_path / "image.png"
-        filepath.write_bytes(VALID_PNG_BYTES + PICKLE_PROTO_4 + b'\x95\x00\x00\x00\x00\x00\x00\x00\x00.')
+        # Protocol 4 pickle with proper FRAME structure and valid opcode after frame
+        # FRAME (0x95) + 8-byte length (20) + EMPTY_DICT (0x7D) as first opcode
+        valid_pickle = PICKLE_PROTO_4 + b'\x95\x14\x00\x00\x00\x00\x00\x00\x00}.'
+        filepath.write_bytes(VALID_PNG_BYTES + valid_pickle)
 
         findings = _check_archive_in_image(filepath)
 
@@ -371,7 +374,10 @@ class TestArchiveInVideo:
         """Pickle data appended to video is detected."""
         filepath = tmp_path / "video.mp4"
         mp4_header = b'\x00\x00\x00\x1cftypisom' + b'\x00' * 100
-        filepath.write_bytes(mp4_header + PICKLE_PROTO_4 + b'\x95\x00\x00\x00\x00\x00\x00\x00\x00.')
+        # Protocol 4 pickle with proper FRAME structure and valid opcode after frame
+        # FRAME (0x95) + 8-byte length (20) + EMPTY_DICT (0x7D) as first opcode
+        valid_pickle = PICKLE_PROTO_4 + b'\x95\x14\x00\x00\x00\x00\x00\x00\x00}.'
+        filepath.write_bytes(mp4_header + valid_pickle)
 
         findings = _check_archive_in_video(filepath)
 
