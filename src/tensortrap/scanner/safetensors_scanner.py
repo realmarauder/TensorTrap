@@ -87,7 +87,7 @@ def scan_safetensors(filepath: Path) -> list[Finding]:
         findings.append(
             Finding(
                 severity=Severity.HIGH,
-                message=f"File appears truncated: {count} tensor(s) exceed file size",
+                message=f"Invalid tensor offset: {count} tensor(s) exceed file size",
                 location=8,
                 details={
                     "truncated_tensors": count,
