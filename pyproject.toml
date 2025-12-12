@@ -8,9 +8,9 @@ requires-python = ">=3.10"
 authors = [
     {name = "realmarauder", email = "smichael.us@gmail.com"}
 ]
-keywords = ["security", "ai", "ml", "machine-learning", "scanner", "pickle", "safetensors"]
+keywords = ["security", "ai", "ml", "machine-learning", "scanner", "pickle", "safetensors", "gguf", "malware", "comfyui", "swarmui", "huggingface", "civitai"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -20,6 +20,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Security",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
 ]
 
 dependencies = [
@@ -36,6 +38,13 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/realmarauder/TensorTrap"
+Documentation = "https://github.com/realmarauder/TensorTrap#readme"
+Repository = "https://github.com/realmarauder/TensorTrap"
+Issues = "https://github.com/realmarauder/TensorTrap/issues"
+Changelog = "https://github.com/realmarauder/TensorTrap/blob/main/CHANGELOG.md"
 
 [project.scripts]
 tensortrap = "tensortrap.cli:app"
