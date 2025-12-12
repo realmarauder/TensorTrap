@@ -12,6 +12,7 @@ from tensortrap.scanner.keras_scanner import scan_keras_file
 from tensortrap.scanner.obfuscation import scan_for_obfuscation
 from tensortrap.scanner.onnx_scanner import scan_onnx_file
 from tensortrap.scanner.pickle_scanner import scan_pickle_file
+from tensortrap.scanner.polyglot_scanner import scan_polyglot
 from tensortrap.scanner.recommendations import add_recommendations
 from tensortrap.scanner.results import Finding, ScanResult, Severity
 from tensortrap.scanner.safetensors_scanner import scan_safetensors
@@ -238,6 +239,9 @@ def _scan_by_format(filepath: Path, file_format: str) -> list[Finding]:
     elif file_format == "json":
         # JSON files might be ComfyUI workflows
         findings.extend(scan_comfyui_workflow(filepath))
+    elif file_format in ("image", "video", "svg"):
+        # Media files - run polyglot scanner
+        findings.extend(scan_polyglot(filepath))
     elif file_format == "unknown":
         # Try to detect format from file contents
         findings.extend(_scan_unknown_format(filepath))
@@ -249,6 +253,12 @@ def _scan_by_format(filepath: Path, file_format: str) -> list[Finding]:
                 location=None,
             )
         )
+
+    # Run polyglot detection on ALL files (Defense-in-Depth)
+    # This catches disguised files regardless of extension
+    if file_format not in ("image", "video", "svg"):
+        polyglot_findings = scan_polyglot(filepath)
+        findings.extend(polyglot_findings)
 
     # Run obfuscation detection on high-risk formats
     if file_format in ("pickle", "onnx", "keras", "unknown"):

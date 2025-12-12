@@ -91,6 +91,8 @@ Reports are saved with timestamps: `tensortrap_report_YYYYMMDD_HHMMSS.{txt,json,
 | Keras/HDF5 | .h5, .hdf5, .keras | High (Lambda layers, pickle) |
 | YAML | .yaml, .yml | Medium (unsafe deserialization) |
 | ComfyUI | .json (workflows) | High (eval nodes) |
+| Images | .png, .jpg, .gif, .svg, .webp, .bmp, .tiff, .ico | Medium (polyglot attacks) |
+| Video | .mp4, .mkv, .avi, .mov, .webm, .flv, .wmv | Medium (polyglot attacks) |
 
 ## What We Detect
 
@@ -131,6 +133,16 @@ Reports are saved with timestamps: `tensortrap_report_YYYYMMDD_HHMMSS.{txt,json,
 - **Vulnerable nodes**: ACE_ExpressionEval, HueAdjust (CVE-2024-21576/77)
 - **Code execution**: eval() patterns in node inputs
 - **Arbitrary code**: Malicious workflow structures
+
+### Polyglot & Media Files (Defense-in-Depth)
+- **Extension mismatch**: Pickle/archive disguised as image (CVE-2025-1889)
+- **Archive-in-image**: ZIP/7z/RAR appended to valid images
+- **Archive-in-video**: Archives appended to video files
+- **SVG script injection**: JavaScript, onclick handlers, data URIs
+- **Metadata payloads**: Malicious code in EXIF/XMP metadata
+- **Double extensions**: Tricks like `model.pkl.png`
+- **Trailing data**: Hidden data after image end markers
+- **MKV attachments**: Embedded files in Matroska containers
 
 ### Additional Detections
 - **Magic byte analysis**: Detects disguised pickle files (CVE-2025-1889)
@@ -201,6 +213,58 @@ Reports saved:
     }
   ]
 }
+```
+
+## Defense in Depth
+
+TensorTrap focuses on AI model file security. For comprehensive protection of your AI workflow, we recommend combining TensorTrap with these complementary tools:
+
+### Recommended Security Stack
+
+| Tool | Purpose | Install |
+|------|---------|---------|
+| **TensorTrap** | AI model file scanning | `pip install tensortrap` |
+| **Stego** | Steganography detection | See [stego-toolkit](https://github.com/DominicBreuker/stego-toolkit) |
+| **YARA** | Pattern-based malware detection | `apt install yara` / [yara.readthedocs.io](https://yara.readthedocs.io/) |
+| **RKHunter** | Rootkit detection | `apt install rkhunter` |
+| **ClamAV** | General antivirus | `apt install clamav` |
+
+### What Each Tool Catches
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    AI Workflow Security                         │
+├─────────────────────────────────────────────────────────────────┤
+│  Downloaded Models    │  Generated Output    │  System Level    │
+│  ─────────────────    │  ────────────────    │  ────────────    │
+│  TensorTrap ✓         │  Stego ✓             │  RKHunter ✓      │
+│  • Pickle exploits    │  • Hidden data       │  • Rootkits      │
+│  • Format attacks     │  • Steganography     │  • Backdoors     │
+│  • Polyglot files     │                      │                  │
+│                       │                      │  ClamAV ✓        │
+│  YARA ✓               │                      │  • Known malware │
+│  • Known signatures   │                      │  • Viruses       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Quick Setup (Linux)
+
+```bash
+# Install TensorTrap
+pip install tensortrap
+
+# Install system tools
+sudo apt update
+sudo apt install yara rkhunter clamav clamav-daemon
+
+# Initialize ClamAV database
+sudo freshclam
+
+# Run comprehensive scan
+tensortrap scan ~/Models ~/Downloads    # AI models + polyglot detection
+yara -r /path/to/rules ~/Downloads      # Pattern matching
+rkhunter --check                        # System integrity
+clamscan -r ~/Downloads                 # General malware
 ```
 
 ## Contributing
