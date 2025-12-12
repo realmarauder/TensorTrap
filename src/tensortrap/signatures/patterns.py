@@ -81,6 +81,34 @@ FORMAT_EXTENSIONS: dict[str, str] = {
     ".yml": "yaml",
     # JSON (for ComfyUI workflows)
     ".json": "json",
+    # Image formats (polyglot scanning)
+    ".png": "image",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".gif": "image",
+    ".webp": "image",
+    ".bmp": "image",
+    ".svg": "svg",
+    ".tiff": "image",
+    ".tif": "image",
+    ".ico": "image",
+    ".avif": "image",
+    ".heic": "image",
+    ".heif": "image",
+    # Video formats (polyglot scanning)
+    ".mp4": "video",
+    ".webm": "video",
+    ".avi": "video",
+    ".mov": "video",
+    ".mkv": "video",
+    ".m4v": "video",
+    ".flv": "video",
+    ".wmv": "video",
+    ".ogv": "video",
+    ".3gp": "video",
+    ".ts": "video",
+    ".mts": "video",
+    ".m2ts": "video",
 }
 
 
