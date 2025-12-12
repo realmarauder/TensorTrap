@@ -1,0 +1,130 @@
+# .github/workflows/build-executables.yml
+# Builds standalone executables for Windows, macOS, and Linux
+# Triggered on releases or manually via workflow_dispatch
+
+name: Build Executables
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write  # Required to upload release assets
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: tensortrap
+            asset_name: tensortrap-linux-x64
+          - os: windows-latest
+            artifact_name: tensortrap.exe
+            asset_name: tensortrap-windows-x64.exe
+          - os: macos-latest
+            artifact_name: tensortrap
+            asset_name: tensortrap-macos-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          pyinstaller --onefile \
+            --name tensortrap \
+            --console \
+            --collect-all tensortrap \
+            --hidden-import=tensortrap.scanner.polyglot_scanner \
+            --hidden-import=tensortrap.scanner.pickle_scanner \
+            --hidden-import=tensortrap.scanner.safetensors_scanner \
+            --hidden-import=tensortrap.scanner.gguf_scanner \
+            --hidden-import=tensortrap.scanner.onnx_scanner \
+            --hidden-import=tensortrap.scanner.keras_scanner \
+            --hidden-import=tensortrap.scanner.yaml_scanner \
+            --hidden-import=tensortrap.scanner.comfyui_scanner \
+            src/tensortrap/__main__.py
+
+      - name: Test executable
+        run: |
+          ./dist/tensortrap --version
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.artifact_name }}
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: dist/${{ matrix.artifact_name }}
+          asset_name: ${{ matrix.asset_name }}
+          asset_content_type: application/octet-stream
+
+  build-macos-intel:
+    name: Build macOS Intel
+    runs-on: macos-13  # Intel runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          pyinstaller --onefile \
+            --name tensortrap \
+            --console \
+            --collect-all tensortrap \
+            src/tensortrap/__main__.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tensortrap-macos-x64
+          path: dist/tensortrap
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: dist/tensortrap
+          asset_name: tensortrap-macos-x64
+          asset_content_type: application/octet-stream
