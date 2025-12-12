@@ -12,7 +12,7 @@ from typing import Any
 from tensortrap.scanner.results import Finding, Severity
 
 # Known vulnerable node types (CVE-2024-21576, CVE-2024-21577)
-VULNERABLE_NODE_TYPES = {
+VULNERABLE_NODE_TYPES: dict[str, dict[str, Any]] = {
     "ACE_ExpressionEval": {
         "severity": Severity.CRITICAL,
         "cve": "CVE-2024-21577",
@@ -189,7 +189,7 @@ def _scan_node_inputs(node: dict, content: str) -> list[Finding]:
     """
     import re
 
-    findings = []
+    findings: list[Finding] = []
     node_id = node.get("id", "unknown")
     node_type = node.get("type", "unknown")
 

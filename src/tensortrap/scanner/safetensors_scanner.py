@@ -48,6 +48,10 @@ def scan_safetensors(filepath: Path) -> list[Finding]:
         if header is None:
             return findings
 
+    # At this point header is guaranteed to not be None
+    if header is None:
+        return findings
+
     # Check header size
     if header.header_size > SUSPICIOUS_HEADER_SIZE:
         findings.append(

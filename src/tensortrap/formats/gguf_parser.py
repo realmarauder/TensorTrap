@@ -59,7 +59,8 @@ def read_string(f) -> str:
     length = struct.unpack("<Q", f.read(8))[0]
     if length > 10_000_000:  # 10MB string limit
         raise ValueError(f"String too long: {length}")
-    return f.read(length).decode("utf-8", errors="replace")
+    data: bytes = f.read(length)
+    return data.decode("utf-8", errors="replace")
 
 
 def read_value(f, value_type: int) -> Any:

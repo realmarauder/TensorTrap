@@ -60,7 +60,7 @@ def scan_onnx(filepath: Path) -> list[Finding]:
         # Check for suspicious patterns even if not explicit traversal
         suspicious_patterns = [
             ("/etc/", "System config directory"),
-            ("/tmp/", "Temp directory"),
+            ("/tmp/", "Temp directory"),  # nosec B108 - detection pattern, not usage
             ("passwd", "Password file"),
             ("shadow", "Shadow file"),
             (".ssh", "SSH directory"),

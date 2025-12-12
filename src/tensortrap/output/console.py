@@ -143,8 +143,9 @@ def _print_summary(results: list[ScanResult]) -> None:
             console.print("  " + ", ".join(parts))
 
 
-def _format_size(size: int) -> str:
+def _format_size(size_bytes: int) -> str:
     """Format file size in human-readable form."""
+    size: float = float(size_bytes)
     for unit in ["B", "KB", "MB", "GB"]:
         if size < 1024:
             return f"{size:.1f} {unit}"

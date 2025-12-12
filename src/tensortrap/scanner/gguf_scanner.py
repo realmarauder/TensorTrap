@@ -59,6 +59,10 @@ def scan_gguf(filepath: Path) -> list[Finding]:
         if header is None:
             return findings
 
+    # Ensure header is not None for type checker
+    if header is None:
+        return findings
+
     # Check version
     if header.version not in SUPPORTED_VERSIONS:
         findings.append(

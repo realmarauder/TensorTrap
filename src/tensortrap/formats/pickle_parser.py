@@ -36,7 +36,7 @@ def parse_pickle_ops(data: bytes) -> Iterator[PickleOp]:
             yield PickleOp(
                 name=opcode.name,
                 arg=str(arg) if arg is not None else None,
-                pos=pos,
+                pos=pos if pos is not None else 0,
             )
     except Exception:
         # If parsing fails partway through, we've yielded what we could
