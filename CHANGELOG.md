@@ -5,9 +5,18 @@ All notable changes to TensorTrap will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2025-12-11
+## [0.2.0] - 2025-12-12
 
 ### Added
+- **Polyglot scanner**: Defense-in-depth detection for image/video polyglot attacks
+  - Extension mismatch detection (magic bytes vs file extension)
+  - Archive-in-image attacks (ZIP/7z appended to valid images)
+  - Pickle-in-image attacks (pickle bytes embedded after image data)
+  - Double extension tricks (model.pkl.png)
+  - SVG script injection (`<script>`, `onclick=`, `javascript:`)
+  - Metadata payload detection (code patterns in EXIF/XMP)
+  - Trailing data detection after image end markers
+  - Video container analysis (MP4/MKV attachment scanning)
 - **ONNX scanner**: Detects path traversal vulnerabilities (CVE-2024-27318, CVE-2024-5187)
 - **Keras/HDF5 scanner**: Detects Lambda layers, embedded pickle, suspicious config patterns
 - **YAML config scanner**: Detects unsafe deserialization (CVE-2025-50460) and code execution
@@ -17,7 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **7z archive detection**: Detects nullifAI bypass technique (CVE-2025-1716)
 - **Obfuscation detection**: Base64, hex encoding, compression, high entropy analysis
 - Support for .onnx, .h5, .hdf5, .keras, .yaml, .yml, .json extensions
-- 38 new test cases for new scanners
+- Support for image formats: .png, .jpg, .jpeg, .gif, .bmp, .webp, .svg
+- Support for video formats: .mp4, .mov, .avi, .mkv, .webm
+
+### Changed
+- Protocol-aware pickle validation to reduce false positives in polyglot detection
+- Stricter validation requiring GLOBAL opcode with module structure for protocol 2/3
 
 ### Security
 - CVE-2024-27318: ONNX path traversal via external_data
