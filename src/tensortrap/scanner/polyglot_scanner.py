@@ -42,27 +42,96 @@ VIDEO_SIGNATURES = {
     "wmv": b"\x30\x26\xb2\x75",  # ASF header
 }
 
-# Dangerous archive signatures
+# Archive signatures with sufficient length to avoid false positives
+# NOTE: GZIP (0x1f8b) and BZIP2 (BZ) are excluded - only 2 bytes, too many
+# false positives in compressed media data (video codecs, JPEG data, etc.)
 ARCHIVE_SIGNATURES = {
     "zip": b"PK\x03\x04",
     "zip_empty": b"PK\x05\x06",
     "7z": b"7z\xbc\xaf\x27\x1c",
     "rar": b"Rar!\x1a\x07",
     "rar5": b"Rar!\x1a\x07\x01\x00",
-    "gzip": b"\x1f\x8b",
-    "bzip2": b"BZ",
     "xz": b"\xfd7zXZ\x00",
 }
 
-# Pickle signatures (protocol 0-5)
+# Pickle protocol markers - these are only 2 bytes, so we need to validate
+# that they're followed by valid pickle opcodes to avoid false positives
 PICKLE_SIGNATURES = [
-    b"\x80\x00",  # Protocol 0
-    b"\x80\x01",  # Protocol 1
     b"\x80\x02",  # Protocol 2
     b"\x80\x03",  # Protocol 3
     b"\x80\x04",  # Protocol 4
     b"\x80\x05",  # Protocol 5
 ]
+
+# Valid pickle opcodes that should follow the protocol marker
+# See: https://github.com/python/cpython/blob/main/Lib/pickletools.py
+VALID_PICKLE_OPCODES = {
+    # Frame opcode (protocol 4+)
+    0x95,  # FRAME
+    # Most common starting opcodes after protocol marker
+    0x63,  # GLOBAL (c)
+    0x7D,  # EMPTY_DICT (})
+    0x5D,  # EMPTY_LIST (])
+    0x29,  # EMPTY_TUPLE ())
+    0x28,  # MARK (()
+    0x4E,  # NONE (N)
+    0x89,  # NEWOBJ_EX
+    0x81,  # NEWOBJ
+    0x8C,  # SHORT_BINUNICODE
+    0x8D,  # BINUNICODE8
+    0x58,  # BINUNICODE (X)
+    0x55,  # SHORT_BINSTRING (U)
+    0x54,  # BINSTRING (T)
+    0x42,  # BINBYTES (B)
+    0x8E,  # BINBYTES8
+    0x43,  # SHORT_BINBYTES (C)
+    0x4A,  # BININT (J)
+    0x4B,  # BININT1 (K)
+    0x4D,  # BININT2 (M)
+    0x8A,  # LONG1
+    0x8B,  # LONG4
+    0x47,  # BINFLOAT (G)
+    0x88,  # NEWTRUE
+    0x87,  # NEWFALSE
+}
+
+
+def _is_valid_pickle(data: bytes, pos: int) -> bool:
+    r"""Validate that a pickle signature is followed by valid opcodes.
+
+    This reduces false positives by ensuring the 2-byte protocol marker
+    is actually part of a real pickle stream, not random binary data.
+
+    Args:
+        data: The full data buffer
+        pos: Position of the pickle signature (\\x80\\xNN)
+
+    Returns:
+        True if this looks like a real pickle, False if likely random data
+    """
+    # Need at least 3 bytes: protocol marker (2) + opcode (1)
+    if pos + 2 >= len(data):
+        return False
+
+    # For protocol 4+, there may be a FRAME opcode with length
+    # For protocol 2-3, the next byte should be a valid opcode
+    next_byte = data[pos + 2]
+
+    if next_byte in VALID_PICKLE_OPCODES:
+        # Additional validation: if it's FRAME, check structure
+        if next_byte == 0x95:  # FRAME opcode
+            # FRAME is followed by 8-byte length
+            if pos + 10 >= len(data):
+                return False
+            # Frame length should be reasonable (not garbage)
+            frame_len = int.from_bytes(data[pos + 3 : pos + 11], "little")
+            # Reasonable frame size check (less than 10GB)
+            if frame_len > 10_000_000_000:
+                return False
+        return True
+
+    return False
+
 
 # Image extensions to scan for polyglot attacks
 IMAGE_EXTENSIONS = {
@@ -350,9 +419,10 @@ def _check_archive_in_image(filepath: Path) -> list[Finding]:
                 break
 
     # Also check for pickle signatures after image data
+    # BUT validate they're followed by real pickle opcodes to avoid false positives
     for pickle_sig in PICKLE_SIGNATURES:
         pos = data.find(pickle_sig, 8)
-        if pos > 0:
+        if pos > 0 and _is_valid_pickle(data, pos):
             findings.append(
                 Finding(
                     severity=Severity.CRITICAL,
@@ -423,9 +493,9 @@ def _check_trailing_data(filepath: Path) -> list[Finding]:
             "trailing_size": trailing_size,
         }
 
-        # Escalate if trailing data is archive or pickle
+        # Escalate if trailing data is archive or validated pickle
         for sig in PICKLE_SIGNATURES:
-            if trailing_preview.startswith(sig):
+            if trailing_preview.startswith(sig) and _is_valid_pickle(data, trailing_data_start):
                 severity = Severity.CRITICAL
                 details["contains"] = "pickle"
                 details["protocol"] = sig[1]
@@ -512,27 +582,33 @@ def _check_metadata_payloads(filepath: Path) -> list[Finding]:
         return findings
 
     # Patterns that shouldn't appear in legitimate metadata
+    # NOTE: These patterns require more context to avoid false positives
+    # in compressed binary data. Regex patterns are more specific.
     suspicious_patterns = [
         (rb"<\?php", "php_code", Severity.CRITICAL),
-        (rb"<%[^@]", "asp_code", Severity.CRITICAL),  # ASP but not ASP directive
-        (rb"eval\s*\(", "eval_call", Severity.CRITICAL),
-        (rb"exec\s*\(", "exec_call", Severity.CRITICAL),
-        (rb"system\s*\(", "system_call", Severity.CRITICAL),
+        # ASP tags - require = or space after <% for actual code, not random bytes
+        (rb"<%\s*=", "asp_output", Severity.CRITICAL),
+        (rb"<%\s+[a-zA-Z]", "asp_code", Severity.CRITICAL),
+        # Code execution - require paren followed by something code-like
+        # (letter, quote, $, identifier) to avoid random binary matches
+        (rb"eval\s*\(\s*[a-zA-Z$'\"]", "eval_call", Severity.CRITICAL),
+        (rb"exec\s*\(\s*[a-zA-Z$'\"]", "exec_call", Severity.CRITICAL),
+        (rb"system\s*\(\s*[a-zA-Z$'\"]", "system_call", Severity.CRITICAL),
         (rb"import\s+os\b", "python_import_os", Severity.HIGH),
         (rb"import\s+subprocess", "python_import_subprocess", Severity.HIGH),
         (rb"__import__\s*\(", "dynamic_import", Severity.HIGH),
         (rb"<script[^>]*>", "script_tag", Severity.HIGH),
         (rb"javascript:", "javascript_uri", Severity.HIGH),
         (rb"cmd\.exe", "cmd_exe", Severity.HIGH),
-        (rb"/bin/sh", "shell_path", Severity.HIGH),
-        (rb"/bin/bash", "bash_path", Severity.HIGH),
+        (rb"/bin/sh\b", "shell_path", Severity.HIGH),
+        (rb"/bin/bash\b", "bash_path", Severity.HIGH),
     ]
 
-    # Also check for pickle signatures in metadata area
+    # Also check for validated pickle signatures in metadata area
     for pickle_sig in PICKLE_SIGNATURES:
         # Look for pickle in first 64KB (metadata area)
         pos = data.find(pickle_sig, 20)  # Skip first 20 bytes (file headers)
-        if pos > 0 and pos < 65536:
+        if pos > 0 and pos < 65536 and _is_valid_pickle(data, pos):
             findings.append(
                 Finding(
                     severity=Severity.CRITICAL,
@@ -586,6 +662,7 @@ def _check_archive_in_video(filepath: Path) -> list[Finding]:
         return findings
 
     # Check for archives in tail of video file
+    # NOTE: GZIP/BZIP2 removed from ARCHIVE_SIGNATURES due to false positives
     for archive_type, signature in ARCHIVE_SIGNATURES.items():
         pos = tail.find(signature)
         if pos >= 0:
@@ -606,10 +683,11 @@ def _check_archive_in_video(filepath: Path) -> list[Finding]:
             )
             break
 
-    # Check for pickle in tail
+    # Check for validated pickle in tail
+    # Must validate to avoid false positives from random bytes in video codecs
     for pickle_sig in PICKLE_SIGNATURES:
         pos = tail.find(pickle_sig)
-        if pos >= 0:
+        if pos >= 0 and _is_valid_pickle(tail, pos):
             actual_pos = file_size - read_size + pos
             findings.append(
                 Finding(
