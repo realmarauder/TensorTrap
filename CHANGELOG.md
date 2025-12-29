@@ -5,6 +5,44 @@ All notable changes to TensorTrap will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-12-29
+
+### Added
+- **Multi-tier Context Analysis**: Reduces false positive noise while maintaining detection sensitivity
+  - **Tier 2: Context Analyzer** (`context_analyzer.py`)
+    - Entropy analysis to detect compressed/encrypted regions (threshold: 7.0 bits/byte)
+    - Archive structure validation (ZIP, RAR, 7z, GZIP)
+    - AI generation metadata detection (ComfyUI, Stable Diffusion, Topaz, Midjourney, DALL-E)
+    - Executable code context checking (ASP, PHP, JavaScript, Python, Shell)
+    - Confidence scoring: 0.0-1.0 mapped to HIGH/MEDIUM/LOW
+  - **Tier 3: External Validators** (`external_validators.py`)
+    - exiftool integration for metadata confirmation
+    - binwalk integration for archive extraction validation
+    - Graceful degradation when tools not installed
+- **Adjusted Severity Format**: CRITICAL-HIGH, CRITICAL-MEDIUM, CRITICAL-LOW
+  - HIGH confidence: Quarantine immediately
+  - MEDIUM confidence: Investigate manually
+  - LOW confidence: Likely false positive
+- **New CLI Options**:
+  - `--context-analysis/--no-context-analysis`: Enable/disable context analysis (default: enabled)
+  - `--external-validation/--no-external-validation`: Enable external tool validation
+  - `--confidence-threshold`: Minimum confidence to report (0.0-1.0, default: 0.5)
+  - `--entropy-threshold`: Entropy threshold for compressed detection (default: 7.0)
+- **Enhanced Report Output**:
+  - Console shows adjusted severity with confidence percentage
+  - Reports include context analysis reasons and external validation status
+  - Summary shows confidence level breakdown
+
+### Changed
+- Polyglot scanner now uses `scan_polyglot_with_context()` for enriched findings
+- Engine passes context analysis options through scan pipeline
+- Report generators display adjusted severity and confidence information
+
+### Fixed
+- False positives from AI-generated images with embedded metadata (ComfyUI workflows)
+- False positives from high-entropy regions in compressed image data
+- Pattern matches in random binary data incorrectly flagged as threats
+
 ## [0.2.0] - 2025-12-12
 
 ### Added

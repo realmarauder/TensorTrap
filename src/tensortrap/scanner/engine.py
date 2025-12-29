@@ -1,9 +1,15 @@
-"""Main scanning engine that orchestrates format-specific scanners."""
+"""Main scanning engine that orchestrates format-specific scanners.
+
+Enhanced with multi-tier context analysis (v0.3.0):
+- Tier 2: Context Analysis (entropy, AI metadata, structure validation)
+- Tier 3: External Validation (exiftool, binwalk - optional)
+"""
 
 import hashlib
 import time
 from collections.abc import Callable, Generator
 from pathlib import Path
+from typing import Any
 
 from tensortrap.formats.magic import detect_format as detect_by_magic
 from tensortrap.scanner.comfyui_scanner import scan_comfyui_workflow
@@ -12,7 +18,10 @@ from tensortrap.scanner.keras_scanner import scan_keras_file
 from tensortrap.scanner.obfuscation import scan_for_obfuscation
 from tensortrap.scanner.onnx_scanner import scan_onnx_file
 from tensortrap.scanner.pickle_scanner import scan_pickle_file
-from tensortrap.scanner.polyglot_scanner import scan_polyglot
+from tensortrap.scanner.polyglot_scanner import (
+    scan_polyglot,
+    scan_polyglot_with_context,
+)
 from tensortrap.scanner.recommendations import add_recommendations
 from tensortrap.scanner.results import Finding, ScanResult, Severity
 from tensortrap.scanner.safetensors_scanner import scan_safetensors
@@ -20,18 +29,37 @@ from tensortrap.scanner.yaml_scanner import scan_yaml_file
 from tensortrap.signatures.patterns import FORMAT_EXTENSIONS, detect_format
 
 
-def scan_file(filepath: Path, compute_hash: bool = True) -> ScanResult:
+def scan_file(
+    filepath: Path,
+    compute_hash: bool = True,
+    use_context_analysis: bool = True,
+    use_external_validation: bool = False,
+    confidence_threshold: float = 0.5,
+    entropy_threshold: float = 7.0,
+) -> ScanResult:
     """Scan a single file for security issues.
 
     Args:
         filepath: Path to file to scan
         compute_hash: Whether to compute SHA-256 hash
+        use_context_analysis: Whether to run context analysis on findings
+        use_external_validation: Whether to run external tool validation
+        confidence_threshold: Minimum confidence to report as actionable
+        entropy_threshold: Entropy threshold for compressed region detection
 
     Returns:
         ScanResult with findings
     """
     filepath = Path(filepath)
     start_time = time.perf_counter()
+
+    # Build scan options for internal use
+    scan_options: dict[str, Any] = {
+        "use_context_analysis": use_context_analysis,
+        "use_external_validation": use_external_validation,
+        "confidence_threshold": confidence_threshold,
+        "entropy_threshold": entropy_threshold,
+    }
 
     # Check file exists
     if not filepath.exists():
@@ -85,7 +113,11 @@ def scan_file(filepath: Path, compute_hash: bool = True) -> ScanResult:
         file_hash = _compute_sha256(filepath)
 
     # Run appropriate scanner
-    findings = _scan_by_format(filepath, file_format)
+    findings = _scan_by_format(filepath, file_format, scan_options)
+
+    # Run external validation if enabled
+    if use_external_validation and findings:
+        findings = _apply_external_validation(filepath, findings)
 
     # Calculate scan time
     scan_time_ms = (time.perf_counter() - start_time) * 1000
@@ -140,6 +172,10 @@ def scan_files_with_progress(
     files: list[Path],
     compute_hash: bool = True,
     progress_callback: Callable[[Path, int, int], None] | None = None,
+    use_context_analysis: bool = True,
+    use_external_validation: bool = False,
+    confidence_threshold: float = 0.5,
+    entropy_threshold: float = 7.0,
 ) -> Generator[ScanResult, None, None]:
     """Scan files one at a time, yielding results for progress tracking.
 
@@ -147,6 +183,10 @@ def scan_files_with_progress(
         files: List of file paths to scan
         compute_hash: Whether to compute SHA-256 hash
         progress_callback: Optional callback(filepath, current, total) for progress
+        use_context_analysis: Whether to run context analysis on findings
+        use_external_validation: Whether to run external tool validation
+        confidence_threshold: Minimum confidence to report as actionable
+        entropy_threshold: Entropy threshold for compressed region detection
 
     Yields:
         ScanResult for each file
@@ -155,7 +195,14 @@ def scan_files_with_progress(
     for i, filepath in enumerate(files):
         if progress_callback:
             progress_callback(filepath, i + 1, total)
-        yield scan_file(filepath, compute_hash=compute_hash)
+        yield scan_file(
+            filepath,
+            compute_hash=compute_hash,
+            use_context_analysis=use_context_analysis,
+            use_external_validation=use_external_validation,
+            confidence_threshold=confidence_threshold,
+            entropy_threshold=entropy_threshold,
+        )
 
 
 def scan_directory(
@@ -212,17 +259,25 @@ def scan_directory(
     return list(scan_files_with_progress(files, compute_hash=compute_hash))
 
 
-def _scan_by_format(filepath: Path, file_format: str) -> list[Finding]:
+def _scan_by_format(
+    filepath: Path,
+    file_format: str,
+    scan_options: dict[str, Any] | None = None,
+) -> list[Finding]:
     """Run the appropriate scanner for a file format.
 
     Args:
         filepath: Path to file
         file_format: Detected format
+        scan_options: Context analysis options
 
     Returns:
         List of findings
     """
-    findings = []
+    findings: list[Finding] = []
+    options = scan_options or {}
+    use_context = options.get("use_context_analysis", True)
+    entropy_threshold = options.get("entropy_threshold", 7.0)
 
     if file_format == "pickle":
         findings.extend(scan_pickle_file(filepath))
@@ -240,8 +295,17 @@ def _scan_by_format(filepath: Path, file_format: str) -> list[Finding]:
         # JSON files might be ComfyUI workflows
         findings.extend(scan_comfyui_workflow(filepath))
     elif file_format in ("image", "video", "svg"):
-        # Media files - run polyglot scanner
-        findings.extend(scan_polyglot(filepath))
+        # Media files - run polyglot scanner with context analysis
+        if use_context:
+            findings.extend(
+                scan_polyglot_with_context(
+                    filepath,
+                    use_context_analysis=True,
+                    entropy_threshold=entropy_threshold,
+                )
+            )
+        else:
+            findings.extend(scan_polyglot(filepath))
     elif file_format == "unknown":
         # Try to detect format from file contents
         findings.extend(_scan_unknown_format(filepath))
@@ -257,7 +321,14 @@ def _scan_by_format(filepath: Path, file_format: str) -> list[Finding]:
     # Run polyglot detection on ALL files (Defense-in-Depth)
     # This catches disguised files regardless of extension
     if file_format not in ("image", "video", "svg"):
-        polyglot_findings = scan_polyglot(filepath)
+        if use_context:
+            polyglot_findings = scan_polyglot_with_context(
+                filepath,
+                use_context_analysis=True,
+                entropy_threshold=entropy_threshold,
+            )
+        else:
+            polyglot_findings = scan_polyglot(filepath)
         findings.extend(polyglot_findings)
 
     # Run obfuscation detection on high-risk formats
@@ -402,3 +473,87 @@ def _compute_sha256(filepath: Path) -> str:
         return sha256.hexdigest()
     except OSError:
         return ""
+
+
+def _apply_external_validation(
+    filepath: Path,
+    findings: list[Finding],
+) -> list[Finding]:
+    """Apply external tool validation to findings.
+
+    Uses exiftool and binwalk (if available) to validate MEDIUM and HIGH
+    confidence findings. May downgrade severity if tools don't confirm threat.
+
+    Args:
+        filepath: Path to file being scanned
+        findings: List of findings to validate
+
+    Returns:
+        Updated findings with external_validation info in details
+    """
+    # Lazy import to avoid circular dependencies
+    from tensortrap.scanner.external_validators import ExternalValidationRunner
+
+    runner = ExternalValidationRunner(enabled=True)
+
+    # Check tool availability
+    tools = runner.get_available_tools()
+    if not any(tools.values()):
+        # No external tools available, return findings unchanged
+        return findings
+
+    validated_findings: list[Finding] = []
+
+    for finding in findings:
+        # Only validate findings that have context analysis
+        if not finding.details or "context_analysis" not in finding.details:
+            validated_findings.append(finding)
+            continue
+
+        ctx = finding.details.get("context_analysis", {})
+        confidence_level = ctx.get("confidence_level", "LOW")
+
+        # Only validate MEDIUM and HIGH confidence
+        if confidence_level not in ("MEDIUM", "HIGH"):
+            validated_findings.append(finding)
+            continue
+
+        # Get pattern name
+        pattern_name = finding.details.get("technique", "")
+        if not pattern_name:
+            pattern_name = finding.message[:50]
+
+        # Run external validation
+        result = runner.validate_finding(
+            filepath=filepath,
+            pattern_name=pattern_name,
+            confidence_level=confidence_level,
+            offset=finding.location,
+        )
+
+        if result:
+            # Add external validation to details
+            updated_details = dict(finding.details)
+            updated_details["external_validation"] = result.to_dict()
+
+            # Downgrade if external tool doesn't confirm
+            if result.status.value == "not_confirmed":
+                if "adjusted_severity" in updated_details:
+                    orig = updated_details["adjusted_severity"]
+                    updated_details["adjusted_severity"] = orig.replace(
+                        "-HIGH", "-LOW"
+                    ).replace("-MEDIUM", "-LOW")
+                    updated_details["external_override"] = True
+
+            validated_finding = Finding(
+                severity=finding.severity,
+                message=finding.message,
+                location=finding.location,
+                details=updated_details,
+                recommendation=finding.recommendation,
+            )
+            validated_findings.append(validated_finding)
+        else:
+            validated_findings.append(finding)
+
+    return validated_findings

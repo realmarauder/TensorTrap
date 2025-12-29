@@ -82,9 +82,38 @@ def generate_txt_report(results: list[ScanResult], scan_path: str) -> str:
             lines.append("Findings:")
             for finding in sorted(result.findings, key=lambda f: list(Severity).index(f.severity)):
                 icon = _severity_icon(finding.severity)
-                lines.append(f"  {icon} [{finding.severity.value.upper()}] {finding.message}")
+                # Use adjusted severity if available from context analysis
+                severity_str = finding.severity.value.upper()
+                if finding.details and "adjusted_severity" in finding.details:
+                    severity_str = finding.details["adjusted_severity"]
+                    # Update icon based on confidence
+                    if "-HIGH" in severity_str:
+                        icon = "!!"
+                    elif "-MEDIUM" in severity_str:
+                        icon = "* "
+                    elif "-LOW" in severity_str:
+                        icon = "  "
+
+                lines.append(f"  {icon} [{severity_str}] {finding.message}")
+
+                # Add confidence info if available
+                if finding.details and "context_analysis" in finding.details:
+                    ctx = finding.details["context_analysis"]
+                    conf_pct = ctx.get("confidence_percent", "")
+                    reasons = ctx.get("reasons", [])
+                    if conf_pct:
+                        reason_str = "; ".join(reasons[:2]) if reasons else ""
+                        lines.append(f"      Confidence: {conf_pct} ({reason_str})")
+
                 if finding.recommendation:
                     lines.append(f"      Action: {finding.recommendation}")
+
+                # Add external validation if present
+                if finding.details and "external_validation" in finding.details:
+                    ext = finding.details["external_validation"]
+                    tool = ext.get("tool_name", "unknown")
+                    status = ext.get("status", "unknown")
+                    lines.append(f"      External ({tool}): {status.upper()}")
         else:
             lines.append("Findings: None")
 
@@ -436,13 +465,44 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
             html += '                    <div class="findings">\n'
             for finding in sorted(result.findings, key=lambda f: list(Severity).index(f.severity)):
                 sev_class = finding.severity.value
+                severity_str = finding.severity.value.upper()
+
+                # Get adjusted severity and confidence if available
+                confidence_html = ""
+                if finding.details and "adjusted_severity" in finding.details:
+                    severity_str = finding.details["adjusted_severity"]
+                    if "-HIGH" in severity_str:
+                        sev_class = "critical"
+                    elif "-MEDIUM" in severity_str:
+                        sev_class = "medium"
+                    elif "-LOW" in severity_str:
+                        sev_class = "low"
+
+                if finding.details and "context_analysis" in finding.details:
+                    ctx = finding.details["context_analysis"]
+                    conf_pct = ctx.get("confidence_percent", "")
+                    if conf_pct:
+                        reasons = ctx.get("reasons", [])
+                        reason_str = "; ".join(reasons[:2]) if reasons else ""
+                        confidence_html = f'<div class="finding-confidence" style="font-size:0.8rem;color:#888;margin-top:0.25rem;">Confidence: {conf_pct} ({_escape_html(reason_str)})</div>'
+
                 html += f"""                        <div class="finding {sev_class}">
-                            <div class="finding-severity">{finding.severity.value.upper()}</div>
+                            <div class="finding-severity">{severity_str}</div>
                             <div class="finding-message">{_escape_html(finding.message)}</div>
+{confidence_html}
 """
                 if finding.recommendation:
                     rec = _escape_html(finding.recommendation)
                     html += f'                            <div class="finding-action">{rec}</div>\n'
+
+                # Add external validation if present
+                if finding.details and "external_validation" in finding.details:
+                    ext = finding.details["external_validation"]
+                    tool = ext.get("tool_name", "unknown")
+                    status = ext.get("status", "unknown")
+                    ext_color = "#2ed573" if status == "confirmed" else "#ff6b6b" if status == "not_confirmed" else "#888"
+                    html += f'<div style="font-size:0.8rem;color:{ext_color};margin-top:0.25rem;">External ({tool}): {status.upper()}</div>\n'
+
                 html += "                        </div>\n"
             html += "                    </div>\n"
         else:
@@ -488,6 +548,8 @@ def generate_csv_report(results: list[ScanResult], scan_path: str) -> str:
             "SHA-256",
             "Scan Time (ms)",
             "Finding Severity",
+            "Adjusted Severity",
+            "Confidence",
             "Finding Message",
             "Recommended Action",
         ]
@@ -498,6 +560,15 @@ def generate_csv_report(results: list[ScanResult], scan_path: str) -> str:
 
         if result.findings:
             for finding in result.findings:
+                # Get adjusted severity and confidence from context analysis
+                adjusted_sev = ""
+                confidence = ""
+                if finding.details:
+                    adjusted_sev = finding.details.get("adjusted_severity", "")
+                    if "context_analysis" in finding.details:
+                        ctx = finding.details["context_analysis"]
+                        confidence = ctx.get("confidence_percent", "")
+
                 writer.writerow(
                     [
                         str(result.filepath),
@@ -507,6 +578,8 @@ def generate_csv_report(results: list[ScanResult], scan_path: str) -> str:
                         result.file_hash,
                         f"{result.scan_time_ms:.1f}",
                         finding.severity.value.upper(),
+                        adjusted_sev,
+                        confidence,
                         finding.message,
                         finding.recommendation or "",
                     ]
@@ -520,6 +593,8 @@ def generate_csv_report(results: list[ScanResult], scan_path: str) -> str:
                     result.file_size,
                     result.file_hash,
                     f"{result.scan_time_ms:.1f}",
+                    "",
+                    "",
                     "",
                     "",
                     "",
