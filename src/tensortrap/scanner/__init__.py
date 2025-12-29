@@ -20,9 +20,6 @@ Architecture:
         - Optional, graceful degradation
 """
 
-from tensortrap.scanner.engine import scan_directory, scan_file
-from tensortrap.scanner.results import Finding, ScanResult, Severity
-
 # Context Analysis (Tier 2)
 from tensortrap.scanner.context_analyzer import (
     ConfidenceLevel,
@@ -30,6 +27,7 @@ from tensortrap.scanner.context_analyzer import (
     ContextAnalyzer,
     analyze_finding_context,
 )
+from tensortrap.scanner.engine import scan_directory, scan_file
 
 # External Validation (Tier 3)
 from tensortrap.scanner.external_validators import (
@@ -39,6 +37,7 @@ from tensortrap.scanner.external_validators import (
     ExternalValidationRunner,
     ExternalValidationStatus,
 )
+from tensortrap.scanner.results import Finding, ScanResult, Severity
 
 __all__ = [
     # Core scanning

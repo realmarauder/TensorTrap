@@ -484,7 +484,11 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
                     if conf_pct:
                         reasons = ctx.get("reasons", [])
                         reason_str = "; ".join(reasons[:2]) if reasons else ""
-                        confidence_html = f'<div class="finding-confidence" style="font-size:0.8rem;color:#888;margin-top:0.25rem;">Confidence: {conf_pct} ({_escape_html(reason_str)})</div>'
+                        confidence_html = (
+                            f'<div class="finding-confidence" '
+                            f'style="font-size:0.8rem;color:#888;margin-top:0.25rem;">'
+                            f"Confidence: {conf_pct} ({_escape_html(reason_str)})</div>"
+                        )
 
                 html += f"""                        <div class="finding {sev_class}">
                             <div class="finding-severity">{severity_str}</div>
@@ -500,8 +504,17 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
                     ext = finding.details["external_validation"]
                     tool = ext.get("tool_name", "unknown")
                     status = ext.get("status", "unknown")
-                    ext_color = "#2ed573" if status == "confirmed" else "#ff6b6b" if status == "not_confirmed" else "#888"
-                    html += f'<div style="font-size:0.8rem;color:{ext_color};margin-top:0.25rem;">External ({tool}): {status.upper()}</div>\n'
+                    if status == "confirmed":
+                        ext_color = "#2ed573"
+                    elif status == "not_confirmed":
+                        ext_color = "#ff6b6b"
+                    else:
+                        ext_color = "#888"
+                    html += (
+                        f'<div style="font-size:0.8rem;color:{ext_color};'
+                        f'margin-top:0.25rem;">External ({tool}): '
+                        f"{status.upper()}</div>\n"
+                    )
 
                 html += "                        </div>\n"
             html += "                    </div>\n"
