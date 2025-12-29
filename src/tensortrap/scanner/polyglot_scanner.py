@@ -12,10 +12,17 @@ This module implements Defense-in-Depth (DiD) scanning for:
 - Metadata payloads (code in EXIF/XMP)
 - Double extension tricks (model.pkl.png)
 - Trailing data after image end markers
+
+Enhanced with multi-tier context analysis (v0.3.0):
+- Entropy analysis for compressed region detection
+- Archive structure validation
+- AI metadata detection (ComfyUI, Stable Diffusion, Topaz)
+- Confidence scoring: CRITICAL-HIGH/MEDIUM/LOW
 """
 
 import re
 from pathlib import Path
+from typing import Any
 
 from tensortrap.scanner.results import Finding, Severity
 
@@ -809,3 +816,214 @@ def _check_video_metadata(filepath: Path) -> list[Finding]:
             )
 
     return findings
+
+
+def _detect_file_format(filepath: Path) -> str:
+    """Detect file format from extension for context analysis."""
+    ext = filepath.suffix.lower()
+    if ext in IMAGE_EXTENSIONS:
+        return "image"
+    elif ext in VIDEO_EXTENSIONS:
+        return "video"
+    else:
+        return "unknown"
+
+
+def scan_polyglot_with_context(
+    filepath: Path,
+    use_context_analysis: bool = True,
+    entropy_threshold: float = 7.0,
+) -> list[Finding]:
+    """Scan a file for polyglot/disguised threats with context analysis.
+
+    This enhanced version adds confidence scoring to reduce false positive noise
+    while maintaining full detection sensitivity.
+
+    Args:
+        filepath: Path to file to scan
+        use_context_analysis: Whether to run context analysis (default: True)
+        entropy_threshold: Entropy threshold for compressed region detection
+
+    Returns:
+        List of findings, enriched with context_analysis if enabled
+    """
+    # Stage 1: Run standard pattern detection
+    findings = scan_polyglot(filepath)
+
+    # Skip context analysis if disabled or no findings
+    if not use_context_analysis or not findings:
+        return findings
+
+    # Lazy import to avoid circular dependencies
+    from tensortrap.scanner.context_analyzer import ContextAnalyzer
+
+    try:
+        with open(filepath, "rb") as f:
+            file_data = f.read()
+    except OSError:
+        return findings
+
+    file_format = _detect_file_format(filepath)
+    analyzer = ContextAnalyzer(entropy_threshold=entropy_threshold)
+
+    # Stage 2: Apply context analysis to HIGH/CRITICAL findings
+    enriched_findings: list[Finding] = []
+
+    for finding in findings:
+        # Only analyze HIGH and CRITICAL severity findings
+        if finding.severity not in (Severity.HIGH, Severity.CRITICAL):
+            enriched_findings.append(finding)
+            continue
+
+        # Get pattern name from details or message
+        pattern_name = ""
+        if finding.details:
+            pattern_name = finding.details.get("technique", "")
+        if not pattern_name:
+            pattern_name = finding.message[:50]
+
+        # Run context analysis
+        context_result = analyzer.analyze(
+            file_data=file_data,
+            match_offset=finding.location or 0,
+            pattern_name=pattern_name,
+            file_format=file_format,
+            original_severity=finding.severity.value,
+            filepath=filepath,
+        )
+
+        # Enrich finding with context analysis
+        enriched_details = dict(finding.details or {})
+        enriched_details["context_analysis"] = context_result.to_dict()
+        enriched_details["adjusted_severity"] = context_result.adjusted_severity
+        enriched_details["confidence"] = context_result.confidence_score
+        enriched_details["recommended_action"] = context_result.recommended_action
+
+        enriched_finding = Finding(
+            severity=finding.severity,
+            message=finding.message,
+            location=finding.location,
+            details=enriched_details,
+            recommendation=context_result.recommended_action,
+        )
+
+        enriched_findings.append(enriched_finding)
+
+    return enriched_findings
+
+
+def enrich_findings_with_context(
+    findings: list[Finding],
+    file_data: bytes,
+    filepath: Path,
+    file_format: str | None = None,
+    entropy_threshold: float = 7.0,
+) -> list[Finding]:
+    """Enrich existing findings with context analysis.
+
+    Utility function for enriching findings from any scanner with
+    context analysis. Used by the engine for unified enrichment.
+
+    Args:
+        findings: List of findings to enrich
+        file_data: Raw file bytes
+        filepath: Path to file
+        file_format: File format (auto-detected if None)
+        entropy_threshold: Entropy threshold for compressed detection
+
+    Returns:
+        List of findings enriched with context_analysis
+    """
+    if not findings:
+        return findings
+
+    # Lazy import to avoid circular dependencies
+    from tensortrap.scanner.context_analyzer import ContextAnalyzer
+
+    if file_format is None:
+        file_format = _detect_file_format(filepath)
+
+    analyzer = ContextAnalyzer(entropy_threshold=entropy_threshold)
+    enriched_findings: list[Finding] = []
+
+    for finding in findings:
+        # Only analyze HIGH and CRITICAL severity findings
+        if finding.severity not in (Severity.HIGH, Severity.CRITICAL):
+            enriched_findings.append(finding)
+            continue
+
+        # Get pattern name
+        pattern_name = ""
+        if finding.details:
+            pattern_name = finding.details.get("technique", "")
+        if not pattern_name:
+            pattern_name = finding.message[:50]
+
+        # Run context analysis
+        context_result = analyzer.analyze(
+            file_data=file_data,
+            match_offset=finding.location or 0,
+            pattern_name=pattern_name,
+            file_format=file_format,
+            original_severity=finding.severity.value,
+            filepath=filepath,
+        )
+
+        # Enrich finding with context analysis
+        enriched_details = dict(finding.details or {})
+        enriched_details["context_analysis"] = context_result.to_dict()
+        enriched_details["adjusted_severity"] = context_result.adjusted_severity
+        enriched_details["confidence"] = context_result.confidence_score
+        enriched_details["recommended_action"] = context_result.recommended_action
+
+        enriched_finding = Finding(
+            severity=finding.severity,
+            message=finding.message,
+            location=finding.location,
+            details=enriched_details,
+            recommendation=context_result.recommended_action,
+        )
+
+        enriched_findings.append(enriched_finding)
+
+    return enriched_findings
+
+
+def get_context_analysis_summary(findings: list[Finding]) -> dict[str, Any]:
+    """Generate summary statistics for context-analyzed findings.
+
+    Args:
+        findings: List of findings (may have context_analysis in details)
+
+    Returns:
+        Dictionary with summary statistics
+    """
+    summary: dict[str, Any] = {
+        "total_findings": len(findings),
+        "context_analyzed": 0,
+        "by_confidence": {"HIGH": 0, "MEDIUM": 0, "LOW": 0},
+        "by_adjusted_severity": {},
+        "actionable_count": 0,  # HIGH/MEDIUM confidence
+    }
+
+    for finding in findings:
+        if not finding.details:
+            continue
+
+        ctx = finding.details.get("context_analysis")
+        if not ctx:
+            continue
+
+        summary["context_analyzed"] += 1
+        level = ctx.get("confidence_level", "LOW")
+        summary["by_confidence"][level] = summary["by_confidence"].get(level, 0) + 1
+
+        adjusted = finding.details.get("adjusted_severity", finding.severity.value)
+        summary["by_adjusted_severity"][adjusted] = (
+            summary["by_adjusted_severity"].get(adjusted, 0) + 1
+        )
+
+        if level in ("HIGH", "MEDIUM"):
+            summary["actionable_count"] += 1
+
+    return summary

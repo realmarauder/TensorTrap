@@ -81,7 +81,7 @@ def _print_single_result(result: ScanResult, verbose: bool) -> None:
         padding=(0, 1),
     )
     table.add_column("", width=3)  # Icon
-    table.add_column("Severity", width=10)
+    table.add_column("Severity", width=16)  # Wider for adjusted severity
     table.add_column("Finding", no_wrap=False)
     table.add_column("Action", no_wrap=False, style="cyan")
 
@@ -99,10 +99,35 @@ def _print_single_result(result: ScanResult, verbose: bool) -> None:
         icon = SEVERITY_ICONS[finding.severity]
         style = SEVERITY_COLORS[finding.severity]
         recommendation = finding.recommendation or ""
+
+        # Get adjusted severity if available (from context analysis)
+        severity_display = finding.severity.value.upper()
+        if finding.details and "adjusted_severity" in finding.details:
+            adjusted = finding.details["adjusted_severity"]
+            # Color based on confidence level in adjusted severity
+            if "-HIGH" in adjusted:
+                style = "red bold"
+                icon = "[red]!![/red]"
+            elif "-MEDIUM" in adjusted:
+                style = "yellow"
+                icon = "[yellow]*[/yellow]"
+            elif "-LOW" in adjusted:
+                style = "green"
+                icon = "[green] [/green]"
+            severity_display = adjusted
+
+        # Get confidence info if available
+        finding_msg = finding.message
+        if finding.details and "context_analysis" in finding.details:
+            ctx = finding.details["context_analysis"]
+            conf_pct = ctx.get("confidence_percent", "")
+            if conf_pct:
+                finding_msg = f"{finding.message} [dim]({conf_pct})[/dim]"
+
         table.add_row(
             icon,
-            f"[{style}]{finding.severity.value.upper()}[/{style}]",
-            finding.message,
+            f"[{style}]{severity_display}[/{style}]",
+            finding_msg,
             recommendation,
         )
 
@@ -120,6 +145,17 @@ def _print_summary(results: list[ScanResult]) -> None:
     for result in results:
         for finding in result.findings:
             severity_counts[finding.severity] += 1
+
+    # Count by confidence level (for context-analyzed findings)
+    confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    context_analyzed = 0
+    for result in results:
+        for finding in result.findings:
+            if finding.details and "context_analysis" in finding.details:
+                context_analyzed += 1
+                ctx = finding.details["context_analysis"]
+                level = ctx.get("confidence_level", "LOW")
+                confidence_counts[level] = confidence_counts.get(level, 0) + 1
 
     # Summary line
     if unsafe == 0:
@@ -141,6 +177,20 @@ def _print_summary(results: list[ScanResult]) -> None:
                 parts.append(f"[{style}]{count} {sev.value}[/{style}]")
         if parts:
             console.print("  " + ", ".join(parts))
+
+    # Context analysis summary if any were analyzed
+    if context_analyzed > 0:
+        console.print()
+        console.print("[dim]Context Analysis:[/dim]")
+        conf_parts = []
+        if confidence_counts["HIGH"] > 0:
+            conf_parts.append(f"[red]{confidence_counts['HIGH']} HIGH confidence[/red]")
+        if confidence_counts["MEDIUM"] > 0:
+            conf_parts.append(f"[yellow]{confidence_counts['MEDIUM']} MEDIUM[/yellow]")
+        if confidence_counts["LOW"] > 0:
+            conf_parts.append(f"[green]{confidence_counts['LOW']} LOW (likely FP)[/green]")
+        if conf_parts:
+            console.print("  " + ", ".join(conf_parts))
 
 
 def _format_size(size_bytes: int) -> str:

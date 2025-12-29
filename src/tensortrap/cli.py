@@ -75,11 +75,40 @@ def scan(
         "-f",
         help="Comma-separated report formats: txt,json,html,csv (default: all)",
     ),
+    # Context Analysis options (v0.3.0)
+    context_analysis: bool = typer.Option(
+        True,
+        "--context-analysis/--no-context-analysis",
+        help="Run context analysis on findings to score confidence (default: enabled)",
+    ),
+    external_validation: bool = typer.Option(
+        False,
+        "--external-validation/--no-external-validation",
+        help="Run external tool validation (exiftool/binwalk) for confirmation",
+    ),
+    confidence_threshold: float = typer.Option(
+        0.5,
+        "--confidence-threshold",
+        "-c",
+        help="Minimum confidence to report as actionable (0.0-1.0, default: 0.5)",
+        min=0.0,
+        max=1.0,
+    ),
+    entropy_threshold: float = typer.Option(
+        7.0,
+        "--entropy-threshold",
+        help="Entropy above this is considered compressed data (default: 7.0)",
+        min=0.0,
+        max=8.0,
+    ),
 ) -> None:
     """Scan model files for security issues.
 
     Analyzes pickle, safetensors, and GGUF files to detect potentially
     malicious content before loading them.
+
+    Context analysis (enabled by default) reduces false positive noise by
+    analyzing pattern context, entropy, and AI metadata to score confidence.
 
     Examples:
         tensortrap scan model.safetensors
@@ -87,8 +116,18 @@ def scan(
         tensortrap scan model.pkl --json
         tensortrap scan ./models/ --report-dir ./reports
         tensortrap scan ./models/ --report-formats txt,html
+        tensortrap scan ./images/ --external-validation
+        tensortrap scan ./models/ --confidence-threshold 0.7
     """
     compute_hash = not no_hash
+
+    # Build scan options for context analysis
+    scan_options = {
+        "use_context_analysis": context_analysis,
+        "use_external_validation": external_validation,
+        "confidence_threshold": confidence_threshold,
+        "entropy_threshold": entropy_threshold,
+    }
 
     # Parse report formats
     formats = None
@@ -113,7 +152,7 @@ def scan(
             transient=True,
         ) as progress:
             progress.add_task(f"Scanning {path.name}...", total=None)
-            results = [scan_file(path, compute_hash=compute_hash)]
+            results = [scan_file(path, compute_hash=compute_hash, **scan_options)]
     elif path.is_dir():
         # Directory scan with progress bar
         console.print(f"[bold]Collecting files from {path}...[/bold]")
@@ -146,7 +185,9 @@ def scan(
         ) as progress:
             task = progress.add_task("Scanning files...", total=len(files))
 
-            for result in scan_files_with_progress(files, compute_hash=compute_hash):
+            for result in scan_files_with_progress(
+                files, compute_hash=compute_hash, **scan_options
+            ):
                 results.append(result)
                 # Update progress with current file name (truncated)
                 filename = result.filepath.name
