@@ -167,9 +167,9 @@ class TestContextAnalyzer:
             b"\x08\x00"    # Filename length = 8
             b"\x00\x00"    # Extra field length
             b"test.txt"    # Filename
-            b"\x00" * 100  # Some data
-            b"PK\x05\x06"  # End of central directory
-            b"\x00" * 18
+            + b"\x00" * 100  # Some data
+            + b"PK\x05\x06"  # End of central directory
+            + b"\x00" * 18
         )
 
         result = analyzer._validate_archive_structure(zip_data, 0)
@@ -185,7 +185,7 @@ class TestContextAnalyzer:
         invalid_zip = (
             b"PK\x03\x04"
             b"\xff\xff"    # Invalid version (>100)
-            b"\x00" * 24
+            + b"\x00" * 24
         )
 
         result = analyzer._validate_archive_structure(invalid_zip, 0)
