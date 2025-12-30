@@ -19,22 +19,25 @@ jobs:
           persist-credentials: true
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install black
+          pip install ruff
 
-      - name: Run black formatter
+      - name: Run Ruff linter with auto-fix
         run: |
-          # Adjust the path and line-length if you prefer
-          black src/tensortrap --line-length 88
+          ruff check src/ --fix
+
+      - name: Run Ruff formatter
+        run: |
+          ruff format src/
 
       - name: Commit formatted files (if any)
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: "chore: apply black formatting"
-          file_pattern: "src/tensortrap/**"
+          commit_message: "style: auto-format with ruff"
+          file_pattern: "src/**"
