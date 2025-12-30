@@ -83,7 +83,9 @@ def detect_base64(data: bytes) -> list[dict]:
         try:
             # Add padding if needed
             padded = (
-                candidate + b"=" * (4 - len(candidate) % 4) if len(candidate) % 4 else candidate
+                candidate + b"=" * (4 - len(candidate) % 4)
+                if len(candidate) % 4
+                else candidate
             )
             decoded = base64.b64decode(padded, validate=True)
 
@@ -313,7 +315,9 @@ def scan_for_obfuscation(data: bytes) -> list[Finding]:
 
     # Base64 obfuscation
     suspicious_b64 = [
-        r for r in analysis.suspicious_regions if r.get("type") == "base64" and r.get("suspicious")
+        r
+        for r in analysis.suspicious_regions
+        if r.get("type") == "base64" and r.get("suspicious")
     ]
     if suspicious_b64:
         count = len(suspicious_b64)
@@ -331,7 +335,9 @@ def scan_for_obfuscation(data: bytes) -> list[Finding]:
 
     # Embedded compressed data
     if analysis.has_compressed:
-        compressed = [r for r in analysis.suspicious_regions if r.get("type") in ("zlib", "gzip")]
+        compressed = [
+            r for r in analysis.suspicious_regions if r.get("type") in ("zlib", "gzip")
+        ]
         findings.append(
             Finding(
                 severity=Severity.MEDIUM,
@@ -346,7 +352,9 @@ def scan_for_obfuscation(data: bytes) -> list[Finding]:
 
     # Hex string obfuscation
     suspicious_hex = [
-        r for r in analysis.suspicious_regions if r.get("type") == "hex" and r.get("suspicious")
+        r
+        for r in analysis.suspicious_regions
+        if r.get("type") == "hex" and r.get("suspicious")
     ]
     if suspicious_hex:
         count = len(suspicious_hex)
@@ -364,12 +372,16 @@ def scan_for_obfuscation(data: bytes) -> list[Finding]:
 
     # Unicode escape obfuscation
     if analysis.has_unicode_escape:
-        unicode_regions = [r for r in analysis.suspicious_regions if "escape" in r.get("type", "")]
+        unicode_regions = [
+            r for r in analysis.suspicious_regions if "escape" in r.get("type", "")
+        ]
         findings.append(
             Finding(
                 severity=Severity.MEDIUM,
                 message=f"Unicode escape obfuscation detected ({len(unicode_regions)} region(s))",
-                location=unicode_regions[0].get("position") if unicode_regions else None,
+                location=(
+                    unicode_regions[0].get("position") if unicode_regions else None
+                ),
                 details={
                     "regions": unicode_regions[:5],
                     "technique": "unicode_escape",

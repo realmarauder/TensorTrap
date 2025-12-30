@@ -78,7 +78,8 @@ def detect_format(filepath: Path) -> FormatDetection | None:
             format="pickle",
             confidence="high",
             magic_match=True,
-            extension_match=filepath.suffix.lower() in (".pkl", ".pickle", ".pt", ".pth", ".bin"),
+            extension_match=filepath.suffix.lower()
+            in (".pkl", ".pickle", ".pt", ".pth", ".bin"),
             details={"protocol": protocol},
         )
 

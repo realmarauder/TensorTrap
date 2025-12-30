@@ -225,7 +225,9 @@ def _is_ml_config(content: str) -> bool:
         True if appears to be ML config
     """
     content_lower = content.lower()
-    matches = sum(1 for pattern in ML_CONFIG_INDICATORS if re.search(pattern, content_lower))
+    matches = sum(
+        1 for pattern in ML_CONFIG_INDICATORS if re.search(pattern, content_lower)
+    )
     return matches >= 2
 
 

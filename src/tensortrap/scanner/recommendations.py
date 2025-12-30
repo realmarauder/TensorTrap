@@ -79,5 +79,7 @@ def add_recommendations(findings: list) -> list:
     """
     for finding in findings:
         if finding.recommendation is None:
-            finding.recommendation = get_recommendation(finding.message, finding.severity)
+            finding.recommendation = get_recommendation(
+                finding.message, finding.severity
+            )
     return findings

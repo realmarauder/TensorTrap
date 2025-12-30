@@ -175,7 +175,9 @@ def _is_valid_pickle(data: bytes, pos: int) -> bool:
                 found_newline = True
                 break
             # Must be printable ASCII (letters, digits, underscore, dot)
-            if not (0x2E <= b <= 0x39 or 0x41 <= b <= 0x5A or 0x5F == b or 0x61 <= b <= 0x7A):
+            if not (
+                0x2E <= b <= 0x39 or 0x41 <= b <= 0x5A or 0x5F == b or 0x61 <= b <= 0x7A
+            ):
                 return False
         if not found_newline:
             return False
@@ -346,7 +348,9 @@ def _check_extension_mismatch(filepath: Path) -> list[Finding]:
             actual_format = "jpeg"
         elif header.startswith(b"GIF8"):
             actual_format = "gif"
-        elif header.startswith(b"RIFF") and len(header) >= 12 and header[8:12] == b"WEBP":
+        elif (
+            header.startswith(b"RIFF") and len(header) >= 12 and header[8:12] == b"WEBP"
+        ):
             actual_format = "webp"
 
     # Report mismatches - pickle disguised as media is critical
@@ -365,7 +369,10 @@ def _check_extension_mismatch(filepath: Path) -> list[Finding]:
             )
         )
 
-    elif actual_format in ("zip", "zip_empty", "7z", "rar", "rar5") and ext in MEDIA_EXTENSIONS:
+    elif (
+        actual_format in ("zip", "zip_empty", "7z", "rar", "rar5")
+        and ext in MEDIA_EXTENSIONS
+    ):
         findings.append(
             Finding(
                 severity=Severity.HIGH,
@@ -380,7 +387,13 @@ def _check_extension_mismatch(filepath: Path) -> list[Finding]:
         )
 
     # Archive disguised as model file
-    elif actual_format in ("zip", "7z") and ext in {".pkl", ".pt", ".pth", ".bin", ".ckpt"}:
+    elif actual_format in ("zip", "7z") and ext in {
+        ".pkl",
+        ".pt",
+        ".pth",
+        ".bin",
+        ".ckpt",
+    }:
         # This might be a PyTorch ZIP archive (legitimate) or evasion
         # Only flag 7z as suspicious (CVE-2025-1716)
         if actual_format == "7z":
@@ -546,7 +559,9 @@ def _check_trailing_data(filepath: Path) -> list[Finding]:
 
         # Escalate if trailing data is archive or validated pickle
         for sig in PICKLE_SIGNATURES:
-            if trailing_preview.startswith(sig) and _is_valid_pickle(data, trailing_data_start):
+            if trailing_preview.startswith(sig) and _is_valid_pickle(
+                data, trailing_data_start
+            ):
                 severity = Severity.CRITICAL
                 details["contains"] = "pickle"
                 details["protocol"] = sig[1]

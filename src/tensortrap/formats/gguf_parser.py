@@ -99,7 +99,9 @@ def read_value(f, value_type: int) -> Any:
         raise ValueError(f"Unknown value type: {value_type}")
 
 
-def parse_header(filepath: Path, max_metadata: int = 1000) -> tuple[GGUFHeader | None, str | None]:
+def parse_header(
+    filepath: Path, max_metadata: int = 1000
+) -> tuple[GGUFHeader | None, str | None]:
     """Parse GGUF file header and metadata.
 
     Args:
@@ -118,7 +120,10 @@ def parse_header(filepath: Path, max_metadata: int = 1000) -> tuple[GGUFHeader |
 
             magic = struct.unpack("<I", magic_bytes)[0]
             if magic != GGUF_MAGIC:
-                return None, f"Invalid magic number: {hex(magic)} (expected {hex(GGUF_MAGIC)})"
+                return (
+                    None,
+                    f"Invalid magic number: {hex(magic)} (expected {hex(GGUF_MAGIC)})",
+                )
 
             # Read version
             version = struct.unpack("<I", f.read(4))[0]

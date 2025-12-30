@@ -249,10 +249,14 @@ class ContextAnalyzer:
 
             if archive_result["is_valid"]:
                 confidence = max(confidence, 0.9)
-                reasons.append(f"valid {archive_result['type']} archive structure confirmed")
+                reasons.append(
+                    f"valid {archive_result['type']} archive structure confirmed"
+                )
             else:
                 confidence *= 0.1
-                reasons.append(f"invalid archive structure - {archive_result['reason']}")
+                reasons.append(
+                    f"invalid archive structure - {archive_result['reason']}"
+                )
 
         # === ANALYSIS 3: Executable Context ===
         exec_result = self._check_executable_context(file_data, match_offset)
@@ -281,7 +285,9 @@ class ContextAnalyzer:
                 reasons.append("AI generation metadata detected (ComfyUI/SD/Topaz)")
 
         # === ANALYSIS 5: Pattern-Specific Checks ===
-        pattern_result = self._pattern_specific_analysis(file_data, match_offset, pattern_name)
+        pattern_result = self._pattern_specific_analysis(
+            file_data, match_offset, pattern_name
+        )
         if pattern_result:
             context_data["pattern_analysis"] = pattern_result
             if pattern_result.get("confidence_modifier"):
@@ -416,7 +422,10 @@ class ContextAnalyzer:
             return result
 
         # Check RAR
-        if remaining[:7] == b"Rar!\x1a\x07\x00" or remaining[:8] == b"Rar!\x1a\x07\x01\x00":
+        if (
+            remaining[:7] == b"Rar!\x1a\x07\x00"
+            or remaining[:8] == b"Rar!\x1a\x07\x01\x00"
+        ):
             result["type"] = "RAR"
             result["is_valid"] = True
             result["reason"] = "valid RAR signature"
@@ -523,7 +532,9 @@ class ContextAnalyzer:
             else:
                 # Partial ZIP might still be valid
                 result["is_valid"] = True
-                result["reason"] = "valid local file header (EOCD not found in visible data)"
+                result["reason"] = (
+                    "valid local file header (EOCD not found in visible data)"
+                )
 
             return result
 
@@ -634,7 +645,9 @@ class ContextAnalyzer:
                 b"%>",  # Closing tag
             ]
 
-            found_indicators = sum(1 for ind in asp_code_indicators if ind in context.lower())
+            found_indicators = sum(
+                1 for ind in asp_code_indicators if ind in context.lower()
+            )
 
             if found_indicators >= 2:
                 return {

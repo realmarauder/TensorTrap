@@ -43,7 +43,10 @@ def parse_header(filepath: Path) -> tuple[SafetensorsHeader | None, str | None]:
             # Sanity check header size
             file_size = filepath.stat().st_size
             if header_size > file_size - 8:
-                return None, f"Header size ({header_size}) exceeds file size ({file_size})"
+                return (
+                    None,
+                    f"Header size ({header_size}) exceeds file size ({file_size})",
+                )
 
             if header_size > 100_000_000:  # 100MB header is suspicious
                 return None, f"Header size suspiciously large: {header_size} bytes"
@@ -64,25 +67,33 @@ def parse_header(filepath: Path) -> tuple[SafetensorsHeader | None, str | None]:
                 return None, f"Invalid JSON in header: {e}"
 
             if not isinstance(header_data, dict):
-                return None, f"Header must be a JSON object, got {type(header_data).__name__}"
+                return (
+                    None,
+                    f"Header must be a JSON object, got {type(header_data).__name__}",
+                )
 
             # Extract metadata (special __metadata__ key)
             metadata = header_data.pop("__metadata__", {})
             if not isinstance(metadata, dict):
                 metadata = {}
 
-            return SafetensorsHeader(
-                header_size=header_size,
-                tensors=header_data,
-                metadata=metadata,
-                raw_json=header_json,
-            ), None
+            return (
+                SafetensorsHeader(
+                    header_size=header_size,
+                    tensors=header_data,
+                    metadata=metadata,
+                    raw_json=header_json,
+                ),
+                None,
+            )
 
     except OSError as e:
         return None, f"Failed to read file: {e}"
 
 
-def validate_tensor_offsets(filepath: Path, header: SafetensorsHeader) -> list[tuple[str, str]]:
+def validate_tensor_offsets(
+    filepath: Path, header: SafetensorsHeader
+) -> list[tuple[str, str]]:
     """Validate that tensor offsets are within file bounds.
 
     Args:
@@ -98,7 +109,9 @@ def validate_tensor_offsets(filepath: Path, header: SafetensorsHeader) -> list[t
 
     for name, tensor_info in header.tensors.items():
         if not isinstance(tensor_info, dict):
-            errors.append((name, f"Tensor info is not a dict: {type(tensor_info).__name__}"))
+            errors.append(
+                (name, f"Tensor info is not a dict: {type(tensor_info).__name__}")
+            )
             continue
 
         offsets = tensor_info.get("data_offsets")
@@ -116,11 +129,17 @@ def validate_tensor_offsets(filepath: Path, header: SafetensorsHeader) -> list[t
 
         if absolute_start > file_size:
             errors.append(
-                (name, f"Tensor start offset ({absolute_start}) exceeds file size ({file_size})")
+                (
+                    name,
+                    f"Tensor start offset ({absolute_start}) exceeds file size ({file_size})",
+                )
             )
         if absolute_end > file_size:
             errors.append(
-                (name, f"Tensor end offset ({absolute_end}) exceeds file size ({file_size})")
+                (
+                    name,
+                    f"Tensor end offset ({absolute_end}) exceeds file size ({file_size})",
+                )
             )
         if start > end:
             errors.append((name, f"Tensor start ({start}) > end ({end})"))

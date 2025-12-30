@@ -54,7 +54,9 @@ def _print_single_result(result: ScanResult, verbose: bool) -> None:
         status = "[red]THREATS DETECTED[/red]"
 
     console.print()
-    console.print(f"[bold]{result.filepath}[/bold] [dim]({result.format})[/dim] - {status}")
+    console.print(
+        f"[bold]{result.filepath}[/bold] [dim]({result.format})[/dim] - {status}"
+    )
 
     # File info if verbose
     if verbose:
@@ -188,7 +190,9 @@ def _print_summary(results: list[ScanResult]) -> None:
         if confidence_counts["MEDIUM"] > 0:
             conf_parts.append(f"[yellow]{confidence_counts['MEDIUM']} MEDIUM[/yellow]")
         if confidence_counts["LOW"] > 0:
-            conf_parts.append(f"[green]{confidence_counts['LOW']} LOW (likely FP)[/green]")
+            conf_parts.append(
+                f"[green]{confidence_counts['LOW']} LOW (likely FP)[/green]"
+            )
         if conf_parts:
             console.print("  " + ", ".join(conf_parts))
 

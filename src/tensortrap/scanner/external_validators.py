@@ -99,7 +99,9 @@ class BaseExternalValidator(ABC):
             "binwalk": "sudo apt install binwalk",
             "7z": "sudo apt install p7zip-full",
         }
-        hint = install_hints.get(self.required_tool or "", f"install {self.required_tool}")
+        hint = install_hints.get(
+            self.required_tool or "", f"install {self.required_tool}"
+        )
 
         return ExternalValidationResult(
             status=ExternalValidationStatus.TOOL_UNAVAILABLE,
@@ -232,7 +234,9 @@ class ExiftoolValidator(BaseExternalValidator):
                 continue
 
             # Check relevant fields
-            is_text_field = any(tf.lower() in field_name.lower() for tf in self.TEXT_FIELDS)
+            is_text_field = any(
+                tf.lower() in field_name.lower() for tf in self.TEXT_FIELDS
+            )
             if not is_text_field and len(value) < 100:
                 continue
 
@@ -333,7 +337,11 @@ class BinwalkValidator(BaseExternalValidator):
             # Parse output
             entries = []
             for line in result.stdout.split("\n"):
-                if line.startswith("DECIMAL") or line.startswith("-") or not line.strip():
+                if (
+                    line.startswith("DECIMAL")
+                    or line.startswith("-")
+                    or not line.strip()
+                ):
                     continue
                 parts = line.split(None, 2)
                 if len(parts) >= 3:
@@ -536,7 +544,9 @@ class ExternalValidationRunner:
         for finding in findings:
             filepath = Path(finding.get("filepath", ""))
             pattern = finding.get("pattern", finding.get("pattern_name", ""))
-            confidence = finding.get("context_analysis", {}).get("confidence_level", "LOW")
+            confidence = finding.get("context_analysis", {}).get(
+                "confidence_level", "LOW"
+            )
             offset = finding.get("offset")
 
             result = self.validate_finding(filepath, pattern, confidence, offset)

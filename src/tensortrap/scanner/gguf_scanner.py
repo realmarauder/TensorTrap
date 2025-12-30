@@ -70,7 +70,10 @@ def scan_gguf(filepath: Path) -> list[Finding]:
                 severity=Severity.MEDIUM,
                 message=f"Unknown GGUF version: {header.version}",
                 location=4,
-                details={"version": header.version, "supported": list(SUPPORTED_VERSIONS)},
+                details={
+                    "version": header.version,
+                    "supported": list(SUPPORTED_VERSIONS),
+                },
             )
         )
 
@@ -169,7 +172,10 @@ def _scan_chat_template(template: str) -> list[Finding]:
                             severity=Severity.MEDIUM,
                             message=f"Suspicious pattern in chat template: {description}",
                             location=None,
-                            details={"pattern": pattern_start, "description": description},
+                            details={
+                                "pattern": pattern_start,
+                                "description": description,
+                            },
                         )
                     )
 
@@ -226,7 +232,13 @@ def _scan_metadata(metadata: dict) -> list[Finding]:
                 )
 
             # Check for code patterns
-            code_patterns = ["import os", "import subprocess", "eval(", "exec(", "__import__"]
+            code_patterns = [
+                "import os",
+                "import subprocess",
+                "eval(",
+                "exec(",
+                "__import__",
+            ]
             for pattern in code_patterns:
                 if pattern in value:
                     findings.append(

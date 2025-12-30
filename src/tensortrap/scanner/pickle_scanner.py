@@ -66,7 +66,11 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
                     severity=Severity.CRITICAL,
                     message=f"Known malicious call: {module}.{name}",
                     location=pos,
-                    details={"module": module, "function": name, "known_malicious": True},
+                    details={
+                        "module": module,
+                        "function": name,
+                        "known_malicious": True,
+                    },
                 )
             )
             continue
@@ -75,7 +79,8 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
         # Also check parent modules (e.g., "urllib.request" -> check "urllib")
         module_parts = module.split(".")
         is_dangerous_module = any(
-            ".".join(module_parts[: i + 1]) in DANGEROUS_MODULES for i in range(len(module_parts))
+            ".".join(module_parts[: i + 1]) in DANGEROUS_MODULES
+            for i in range(len(module_parts))
         )
 
         if is_dangerous_module:
@@ -90,9 +95,11 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
             findings.append(
                 Finding(
                     severity=severity,
-                    message=f"Dangerous import: {module}.{name}"
-                    if name
-                    else f"Dangerous import: {module}",
+                    message=(
+                        f"Dangerous import: {module}.{name}"
+                        if name
+                        else f"Dangerous import: {module}"
+                    ),
                     location=pos,
                     details={"module": module, "function": name},
                 )
@@ -140,7 +147,9 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
     # Report REDUCE opcodes (function calls)
     # Only flag as high severity if we also found dangerous imports
     has_dangerous_imports = any(
-        f.severity in (Severity.CRITICAL, Severity.HIGH) and f.details and "module" in f.details
+        f.severity in (Severity.CRITICAL, Severity.HIGH)
+        and f.details
+        and "module" in f.details
         for f in findings
     )
 
@@ -232,7 +241,10 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
     Returns:
         List of findings from internal pickle files
     """
-    from tensortrap.formats.pytorch_zip import analyze_zip_structure, extract_pickle_files
+    from tensortrap.formats.pytorch_zip import (
+        analyze_zip_structure,
+        extract_pickle_files,
+    )
 
     findings = []
 

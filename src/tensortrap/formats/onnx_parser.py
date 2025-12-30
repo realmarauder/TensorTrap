@@ -112,14 +112,17 @@ def analyze_onnx(filepath: Path) -> tuple[ONNXInfo | None, str | None]:
     # Try to extract version info
     ir_version = _extract_ir_version(data)
 
-    return ONNXInfo(
-        ir_version=ir_version,
-        producer_name=_find_producer_name(strings),
-        producer_version=None,
-        external_data_refs=external_refs,
-        has_path_traversal=len(suspicious_refs) > 0,
-        suspicious_refs=suspicious_refs,
-    ), None
+    return (
+        ONNXInfo(
+            ir_version=ir_version,
+            producer_name=_find_producer_name(strings),
+            producer_version=None,
+            external_data_refs=external_refs,
+            has_path_traversal=len(suspicious_refs) > 0,
+            suspicious_refs=suspicious_refs,
+        ),
+        None,
+    )
 
 
 def _extract_strings(data: bytes, min_length: int = 4) -> list[str]:

@@ -68,7 +68,11 @@ SUSPICIOUS_INPUT_PATTERNS = [
     (r"urllib\.(request|parse)", "URL operation", Severity.HIGH),
     (r"socket\.(socket|connect|bind|listen)", "Socket operation", Severity.HIGH),
     (r"\\x[0-9a-fA-F]{2}", "Hex escape sequence", Severity.MEDIUM),
-    (r"base64\.(b64decode|b64encode|decode|encode)", "Base64 encoding", Severity.MEDIUM),
+    (
+        r"base64\.(b64decode|b64encode|decode|encode)",
+        "Base64 encoding",
+        Severity.MEDIUM,
+    ),
 ]
 
 
