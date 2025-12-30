@@ -2,10 +2,11 @@
 
 import json
 import struct
+
 import pytest
 
-from tensortrap.scanner.safetensors_scanner import scan_safetensors
 from tensortrap.scanner.results import Severity
+from tensortrap.scanner.safetensors_scanner import scan_safetensors
 
 
 class TestSafetensorsScanner:
@@ -17,7 +18,9 @@ class TestSafetensorsScanner:
 
         # Valid file should have no critical/high findings
         critical_high = [f for f in findings if f.severity in (Severity.CRITICAL, Severity.HIGH)]
-        assert len(critical_high) == 0, f"Valid safetensors had critical/high findings: {critical_high}"
+        assert len(critical_high) == 0, (
+            f"Valid safetensors had critical/high findings: {critical_high}"
+        )
 
     def test_suspicious_metadata(self, suspicious_safetensors_file):
         """Test detection of suspicious metadata."""
@@ -25,8 +28,7 @@ class TestSafetensorsScanner:
 
         # Should detect suspicious patterns
         suspicious_findings = [
-            f for f in findings
-            if f.severity in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM)
+            f for f in findings if f.severity in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM)
         ]
         assert len(suspicious_findings) > 0, "Should detect suspicious metadata"
 
@@ -37,19 +39,21 @@ class TestSafetensorsScanner:
         # Claim a huge header size
         with open(filepath, "wb") as f:
             f.write(struct.pack("<Q", 500_000_000))  # 500MB header
-            f.write(b'{}')  # Minimal actual data
+            f.write(b"{}")  # Minimal actual data
 
         findings = scan_safetensors(filepath)
 
         # Should detect oversized header
-        size_findings = [f for f in findings if "size" in f.message.lower() or "large" in f.message.lower()]
+        size_findings = [
+            f for f in findings if "size" in f.message.lower() or "large" in f.message.lower()
+        ]
         assert len(size_findings) > 0, "Should detect oversized header"
 
     def test_invalid_json_header(self, fixtures_dir):
         """Test handling of invalid JSON header."""
         filepath = fixtures_dir / "invalid_json.safetensors"
 
-        invalid_json = b'{not valid json'
+        invalid_json = b"{not valid json"
         with open(filepath, "wb") as f:
             f.write(struct.pack("<Q", len(invalid_json)))
             f.write(invalid_json)
@@ -66,7 +70,7 @@ class TestSafetensorsScanner:
 
         with open(filepath, "wb") as f:
             f.write(struct.pack("<Q", 1000))  # Claim 1000 byte header
-            f.write(b'{}')  # Only write 2 bytes
+            f.write(b"{}")  # Only write 2 bytes
 
         findings = scan_safetensors(filepath)
 
@@ -79,14 +83,10 @@ class TestSafetensorsScanner:
 
         # Create header with pickle-like bytes in metadata
         header = {
-            "weight": {
-                "dtype": "F32",
-                "shape": [2],
-                "data_offsets": [0, 8]
-            },
+            "weight": {"dtype": "F32", "shape": [2], "data_offsets": [0, 8]},
             "__metadata__": {
                 "payload": "\\x80\\x04\\x95"  # Looks like pickle protocol 4
-            }
+            },
         }
         header_json = json.dumps(header).encode("utf-8")
 
@@ -109,7 +109,7 @@ class TestSafetensorsScanner:
             "weight": {
                 "dtype": "F32",
                 "shape": [1000000],  # Large tensor
-                "data_offsets": [0, 4000000]  # Offsets beyond file
+                "data_offsets": [0, 4000000],  # Offsets beyond file
             }
         }
         header_json = json.dumps(header).encode("utf-8")
@@ -117,7 +117,7 @@ class TestSafetensorsScanner:
         with open(filepath, "wb") as f:
             f.write(struct.pack("<Q", len(header_json)))
             f.write(header_json)
-            f.write(b'\x00' * 16)  # Only 16 bytes of data
+            f.write(b"\x00" * 16)  # Only 16 bytes of data
 
         findings = scan_safetensors(filepath)
 
@@ -129,26 +129,23 @@ class TestSafetensorsScanner:
 class TestMetadataPatterns:
     """Test detection of suspicious patterns in metadata."""
 
-    @pytest.mark.parametrize("pattern,description", [
-        ("eval(", "eval function"),
-        ("exec(", "exec function"),
-        ("import os", "os import"),
-        ("__import__", "dynamic import"),
-        ("os.system", "system call"),
-    ])
+    @pytest.mark.parametrize(
+        "pattern,description",
+        [
+            ("eval(", "eval function"),
+            ("exec(", "exec function"),
+            ("import os", "os import"),
+            ("__import__", "dynamic import"),
+            ("os.system", "system call"),
+        ],
+    )
     def test_code_pattern_detection(self, fixtures_dir, pattern, description):
         """Test detection of code patterns in metadata."""
         filepath = fixtures_dir / f"pattern_{pattern[:4]}.safetensors"
 
         header = {
-            "tensor": {
-                "dtype": "F32",
-                "shape": [1],
-                "data_offsets": [0, 4]
-            },
-            "__metadata__": {
-                "suspicious": f"This contains {pattern} code"
-            }
+            "tensor": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4]},
+            "__metadata__": {"suspicious": f"This contains {pattern} code"},
         }
         header_json = json.dumps(header).encode("utf-8")
 
@@ -160,5 +157,7 @@ class TestMetadataPatterns:
         findings = scan_safetensors(filepath)
 
         # Should detect the pattern
-        pattern_findings = [f for f in findings if f.severity in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM)]
+        pattern_findings = [
+            f for f in findings if f.severity in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM)
+        ]
         assert len(pattern_findings) > 0, f"Should detect {description} pattern"

@@ -1,6 +1,7 @@
 """Tests for pickle scanner."""
 
 import pytest
+
 from tensortrap.scanner.pickle_scanner import scan_pickle, scan_pickle_file
 from tensortrap.scanner.results import Severity
 
@@ -34,8 +35,7 @@ class TestPickleScanner:
 
         # Should detect REDUCE opcode or stack_global
         has_dangerous = any(
-            f.severity in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM)
-            for f in findings
+            f.severity in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM) for f in findings
         )
         assert has_dangerous, "Should detect dangerous patterns in malicious pickle"
 
@@ -50,7 +50,7 @@ class TestPickleScanner:
         """Test handling of corrupted pickle."""
         filepath = fixtures_dir / "corrupted.pkl"
         with open(filepath, "wb") as f:
-            f.write(b'\x80\x04\xff\xff\xff')  # Invalid pickle bytes
+            f.write(b"\x80\x04\xff\xff\xff")  # Invalid pickle bytes
 
         findings = scan_pickle_file(filepath)
 
@@ -62,7 +62,7 @@ class TestPickleScanner:
         # Create pickle that imports pickle module
         filepath = fixtures_dir / "nested.pkl"
         # Protocol 0 style GLOBAL that imports pickle.loads
-        data = b'cpickle\nloads\np0\n.'
+        data = b"cpickle\nloads\np0\n."
         with open(filepath, "wb") as f:
             f.write(data)
 
@@ -76,14 +76,17 @@ class TestPickleScanner:
 class TestDangerousImports:
     """Test detection of various dangerous imports."""
 
-    @pytest.mark.parametrize("module,expected_severity", [
-        ("os", Severity.CRITICAL),
-        ("subprocess", Severity.CRITICAL),
-        ("socket", Severity.CRITICAL),
-        ("builtins", Severity.CRITICAL),
-        ("sys", Severity.HIGH),
-        ("importlib", Severity.HIGH),
-    ])
+    @pytest.mark.parametrize(
+        "module,expected_severity",
+        [
+            ("os", Severity.CRITICAL),
+            ("subprocess", Severity.CRITICAL),
+            ("socket", Severity.CRITICAL),
+            ("builtins", Severity.CRITICAL),
+            ("sys", Severity.HIGH),
+            ("importlib", Severity.HIGH),
+        ],
+    )
     def test_dangerous_module_detection(self, fixtures_dir, module, expected_severity):
         """Test detection of various dangerous modules."""
         filepath = fixtures_dir / f"test_{module}.pkl"
@@ -99,7 +102,14 @@ class TestDangerousImports:
         assert len(module_findings) > 0, f"Should detect {module} import"
 
         # Check severity is appropriate
-        max_sev = max((f.severity for f in module_findings), key=lambda s: [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO].index(s))
-        severity_order = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
-        assert severity_order.index(max_sev) <= severity_order.index(expected_severity), \
+        severity_order = [
+            Severity.CRITICAL,
+            Severity.HIGH,
+            Severity.MEDIUM,
+            Severity.LOW,
+            Severity.INFO,
+        ]
+        max_sev = max((f.severity for f in module_findings), key=lambda s: severity_order.index(s))
+        assert severity_order.index(max_sev) <= severity_order.index(expected_severity), (
             f"Expected {expected_severity} or higher for {module}, got {max_sev}"
+        )

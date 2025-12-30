@@ -19,13 +19,13 @@ from pathlib import Path
 
 from tensortrap.scanner.results import ScanResult, Severity
 
-
 # Verification instructions by pattern type
 VERIFICATION_INSTRUCTIONS = {
     "eval": """<strong>How to verify:</strong>
 <ol>
     <li>Run: <code>strings "{filepath}" | grep -iE 'eval\\s*\\(' | head -20</code></li>
-    <li>Check if results show actual code like <code>eval($_POST[...])</code> or random binary fragments</li>
+    <li>Check if results show actual code like <code>eval($_POST[...])</code>
+        or random binary fragments</li>
     <li>Run: <code>xxd -s {offset} -l 200 "{filepath}"</code> to inspect the region</li>
     <li>If only random bytes with no code structure → False positive</li>
 </ol>""",
@@ -38,10 +38,11 @@ VERIFICATION_INSTRUCTIONS = {
 </ol>""",
     "asp": """<strong>How to verify:</strong>
 <ol>
-    <li>Run: <code>strings "{filepath}" | grep -iE '&lt;%|response\\.|request\\.' | head -20</code></li>
+    <li>Run: <code>strings "{filepath}" | grep -iE '&lt;%|response\\.' | head -20</code></li>
     <li>Look for actual ASP code: <code>&lt;% Response.Write(...) %&gt;</code></li>
     <li>Run: <code>xxd -s {offset} -l 200 "{filepath}"</code> to inspect the region</li>
-    <li>Random <code>&lt;%</code> in compressed data without closing <code>%&gt;</code> → False positive</li>
+    <li>Random <code>&lt;%</code> in compressed data without closing
+        <code>%&gt;</code> → False positive</li>
 </ol>""",
     "php": """<strong>How to verify:</strong>
 <ol>
@@ -55,7 +56,8 @@ VERIFICATION_INSTRUCTIONS = {
     <li>Run: <code>binwalk "{filepath}"</code> to detect embedded files</li>
     <li>If binwalk shows valid archive with extractable files → Real threat</li>
     <li>Run: <code>xxd -s {offset} -l 100 "{filepath}"</code> to check archive header</li>
-    <li>Invalid version numbers or impossible sizes → False positive (random bytes matching signature)</li>
+    <li>Invalid version numbers or impossible sizes → False positive
+        (random bytes matching signature)</li>
 </ol>""",
     "pickle": """<strong>How to verify:</strong>
 <ol>
@@ -109,7 +111,13 @@ def _get_result_sort_key(result: ScanResult) -> tuple:
     # Find highest confidence among findings
     max_confidence = 0.0
     max_severity_idx = 5
-    severity_order = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
+    severity_order = [
+        Severity.CRITICAL,
+        Severity.HIGH,
+        Severity.MEDIUM,
+        Severity.LOW,
+        Severity.INFO,
+    ]
 
     for finding in result.findings:
         # Get severity index
@@ -802,11 +810,11 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
                 <p>Medium</p>
             </div>
             <div class="stat-card conf-high">
-                <h3>{confidence_counts['HIGH']}</h3>
+                <h3>{confidence_counts["HIGH"]}</h3>
                 <p>High Conf</p>
             </div>
             <div class="stat-card conf-low">
-                <h3>{confidence_counts['LOW']}</h3>
+                <h3>{confidence_counts["LOW"]}</h3>
                 <p>Likely FP</p>
             </div>
         </div>
@@ -816,15 +824,18 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
             <div class="confidence-bar">
                 <div class="conf-item">
                     <span class="conf-dot high"></span>
-                    <span><strong>{confidence_counts['HIGH']}</strong> HIGH confidence - Likely real threats, investigate immediately</span>
+                    <span><strong>{confidence_counts["HIGH"]}</strong> HIGH confidence -
+                        Likely real threats, investigate immediately</span>
                 </div>
                 <div class="conf-item">
                     <span class="conf-dot medium"></span>
-                    <span><strong>{confidence_counts['MEDIUM']}</strong> MEDIUM confidence - May need investigation</span>
+                    <span><strong>{confidence_counts["MEDIUM"]}</strong> MEDIUM confidence -
+                        May need investigation</span>
                 </div>
                 <div class="conf-item">
                     <span class="conf-dot low"></span>
-                    <span><strong>{confidence_counts['LOW']}</strong> LOW confidence - Likely false positives</span>
+                    <span><strong>{confidence_counts["LOW"]}</strong> LOW confidence -
+                        Likely false positives</span>
                 </div>
             </div>
         </div>
@@ -833,7 +844,7 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
     # Threats section
     if unsafe_results:
         html += f"""
-        <h2 class="section-title">Threats Detected ({len(unsafe_results)} files) - Sorted by Priority</h2>
+        <h2 class="section-title">Threats Detected ({len(unsafe_results)} files)</h2>
         <div class="results">
 """
 
@@ -851,13 +862,16 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
 
             filepath_escaped = _escape_html(str(result.filepath))
 
+            js_path = _escape_js(str(result.filepath))
+            conf_color = max_conf_level.lower()
             html += f"""
             <div class="result-card">
                 <div class="result-header" onclick="toggleCard(this)">
                     <span class="toggle-icon">▼</span>
                     <span class="file-path">{filepath_escaped}</span>
                     <div class="header-buttons">
-                        <button class="btn btn-copy" onclick="copyPath(event, '{_escape_js(str(result.filepath))}')">Copy Path</button>
+                        <button class="btn btn-copy"
+                            onclick="copyPath(event, '{js_path}')">Copy Path</button>
                         <span class="status threat">THREATS</span>
                     </div>
                 </div>
@@ -866,13 +880,18 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
                         <span>Format: <strong>{result.format}</strong></span>
                         <span>Size: <strong>{_format_size(result.file_size)}</strong></span>
                         <span>Scan Time: <strong>{result.scan_time_ms:.1f}ms</strong></span>
-                        <span>Max Confidence: <strong style="color: var(--confidence-{max_conf_level.lower()})">{max_conf_level}</strong></span>
+                        <span>Max Confidence:
+                            <strong style="color: var(--confidence-{conf_color})"
+                            >{max_conf_level}</strong></span>
                     </div>
 """
 
             if result.findings:
                 html += '                    <div class="findings">\n'
-                for finding in sorted(result.findings, key=lambda f: list(Severity).index(f.severity)):
+                sorted_findings = sorted(
+                    result.findings, key=lambda f: list(Severity).index(f.severity)
+                )
+                for finding in sorted_findings:
                     sev_class = finding.severity.value
                     severity_str = finding.severity.value.upper()
 
@@ -910,10 +929,12 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
 """
                     if finding.recommendation:
                         rec = _escape_html(finding.recommendation)
-                        html += f'                            <div class="finding-action">{rec}</div>\n'
+                        html += '                            <div class="finding-action">'
+                        html += f"{rec}</div>\n"
 
                     # Add verification instructions
-                    html += f'                            <div class="verification">{verification_html}</div>\n'
+                    html += '                            <div class="verification">'
+                    html += f"{verification_html}</div>\n"
 
                     html += "                        </div>\n"
                 html += "                    </div>\n"
@@ -935,7 +956,8 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
             <div class="safe-files-list" id="safe-files-list">
 """
         for result in safe_results:
-            html += f'                <div class="safe-file-item">{_escape_html(str(result.filepath))}</div>\n'
+            safe_path = _escape_html(str(result.filepath))
+            html += f'                <div class="safe-file-item">{safe_path}</div>\n'
 
         html += """            </div>
         </div>
@@ -944,7 +966,8 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
     html += """
         <footer>
             Generated by TensorTrap - AI/ML Model Security Scanner<br>
-            <small>Tip: Click on threat cards to expand/collapse. Use "Copy Path" to quickly access files.</small>
+            <small>Tip: Click on threat cards to expand/collapse.
+                Use "Copy Path" to quickly access files.</small>
         </footer>
     </div>
 

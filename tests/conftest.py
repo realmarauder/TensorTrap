@@ -1,10 +1,10 @@
 """Pytest fixtures for ModelGuard tests."""
 
+import json
 import pickle
 import struct
-import json
+
 import pytest
-from pathlib import Path
 
 
 @pytest.fixture
@@ -33,21 +33,21 @@ def malicious_pickle_bytes():
     # Protocol 4 pickle that does: os.system("echo pwned")
     # We craft this manually to avoid any actual code execution
     malicious = (
-        b'\x80\x04'  # Protocol 4
-        b'\x95\x1e\x00\x00\x00\x00\x00\x00\x00'  # Frame
-        b'\x8c\x02os'  # Short string "os"
-        b'\x94'  # Memoize
-        b'\x8c\x06system'  # Short string "system"
-        b'\x94'  # Memoize
-        b'\x93'  # STACK_GLOBAL (import os.system)
-        b'\x94'  # Memoize
-        b'\x8c\x0becho pwned'  # Short string "echo pwned"
-        b'\x94'  # Memoize
-        b'\x85'  # TUPLE1
-        b'\x94'  # Memoize
-        b'R'  # REDUCE (call os.system with args)
-        b'\x94'  # Memoize
-        b'.'  # STOP
+        b"\x80\x04"  # Protocol 4
+        b"\x95\x1e\x00\x00\x00\x00\x00\x00\x00"  # Frame
+        b"\x8c\x02os"  # Short string "os"
+        b"\x94"  # Memoize
+        b"\x8c\x06system"  # Short string "system"
+        b"\x94"  # Memoize
+        b"\x93"  # STACK_GLOBAL (import os.system)
+        b"\x94"  # Memoize
+        b"\x8c\x0becho pwned"  # Short string "echo pwned"
+        b"\x94"  # Memoize
+        b"\x85"  # TUPLE1
+        b"\x94"  # Memoize
+        b"R"  # REDUCE (call os.system with args)
+        b"\x94"  # Memoize
+        b"."  # STOP
     )
     return malicious
 
@@ -68,12 +68,12 @@ def simple_malicious_pickle_file(fixtures_dir):
     # Protocol 0 pickle with explicit GLOBAL opcode
     # cos\nsystem\n is "import os.system"
     malicious = (
-        b'cos\n'  # Push module "os"
-        b'system\n'  # Push name "system"
-        b'p0\n'  # Put in memo
-        b'(S\'id\'\n'  # Push string 'id'
-        b'tR'  # Tuple + REDUCE (call)
-        b'.'  # STOP
+        b"cos\n"  # Push module "os"
+        b"system\n"  # Push name "system"
+        b"p0\n"  # Put in memo
+        b"(S'id'\n"  # Push string 'id'
+        b"tR"  # Tuple + REDUCE (call)
+        b"."  # STOP
     )
     with open(filepath, "wb") as f:
         f.write(malicious)
@@ -87,14 +87,8 @@ def valid_safetensors_file(fixtures_dir):
 
     # Create header
     header = {
-        "weight": {
-            "dtype": "F32",
-            "shape": [2, 2],
-            "data_offsets": [0, 16]
-        },
-        "__metadata__": {
-            "format": "pt"
-        }
+        "weight": {"dtype": "F32", "shape": [2, 2], "data_offsets": [0, 16]},
+        "__metadata__": {"format": "pt"},
     }
     header_json = json.dumps(header).encode("utf-8")
     header_size = len(header_json)
@@ -116,15 +110,11 @@ def suspicious_safetensors_file(fixtures_dir):
     filepath = fixtures_dir / "suspicious.safetensors"
 
     header = {
-        "weight": {
-            "dtype": "F32",
-            "shape": [2, 2],
-            "data_offsets": [0, 16]
-        },
+        "weight": {"dtype": "F32", "shape": [2, 2], "data_offsets": [0, 16]},
         "__metadata__": {
             "description": "This contains eval(malicious_code) pattern",
-            "script": "import os; os.system('bad')"
-        }
+            "script": "import os; os.system('bad')",
+        },
     }
     header_json = json.dumps(header).encode("utf-8")
     header_size = len(header_json)

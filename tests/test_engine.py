@@ -1,9 +1,6 @@
 """Tests for scanning engine."""
 
-import pytest
-from pathlib import Path
-
-from tensortrap.scanner.engine import scan_file, scan_directory
+from tensortrap.scanner.engine import scan_directory, scan_file
 from tensortrap.scanner.results import Severity
 
 
@@ -75,7 +72,9 @@ class TestScanDirectory:
 
         assert len(results) == 0
 
-    def test_scan_directory_with_files(self, fixtures_dir, safe_pickle_file, valid_safetensors_file):
+    def test_scan_directory_with_files(
+        self, fixtures_dir, safe_pickle_file, valid_safetensors_file
+    ):
         """Test scanning directory with multiple files."""
         results = scan_directory(fixtures_dir)
 
@@ -124,7 +123,7 @@ class TestFormatDetection:
 
         for ext in extensions:
             filepath = fixtures_dir / f"test{ext}"
-            filepath.write_bytes(b'\x80\x04N.')  # Minimal pickle
+            filepath.write_bytes(b"\x80\x04N.")  # Minimal pickle
 
             result = scan_file(filepath)
             assert result.format == "pickle", f"Extension {ext} should be detected as pickle"
