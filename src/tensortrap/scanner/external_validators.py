@@ -331,7 +331,7 @@ class BinwalkValidator(BaseExternalValidator):
             )
 
             # Parse output
-            entries = []
+            entries: list[dict[str, str | int]] = []
             for line in result.stdout.split("\n"):
                 if line.startswith("DECIMAL") or line.startswith("-") or not line.strip():
                     continue
@@ -365,7 +365,8 @@ class BinwalkValidator(BaseExternalValidator):
         # Filter for real archives
         archives = []
         for entry in entries:
-            desc_lower = entry["description"].lower()
+            desc = str(entry["description"])
+            desc_lower = desc.lower()
 
             # Skip known false positives
             if any(fp in desc_lower for fp in self.FALSE_POSITIVES):
@@ -378,7 +379,7 @@ class BinwalkValidator(BaseExternalValidator):
                         {
                             "type": sig,
                             "offset": entry["offset"],
-                            "description": entry["description"][:100],
+                            "description": desc[:100],
                         }
                     )
                     break

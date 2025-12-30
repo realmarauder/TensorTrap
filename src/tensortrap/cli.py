@@ -121,14 +121,6 @@ def scan(
     """
     compute_hash = not no_hash
 
-    # Build scan options for context analysis
-    scan_options = {
-        "use_context_analysis": context_analysis,
-        "use_external_validation": external_validation,
-        "confidence_threshold": confidence_threshold,
-        "entropy_threshold": entropy_threshold,
-    }
-
     # Parse report formats
     formats = None
     if report_formats:
@@ -152,7 +144,16 @@ def scan(
             transient=True,
         ) as progress:
             progress.add_task(f"Scanning {path.name}...", total=None)
-            results = [scan_file(path, compute_hash=compute_hash, **scan_options)]
+            results = [
+                scan_file(
+                    path,
+                    compute_hash=compute_hash,
+                    use_context_analysis=context_analysis,
+                    use_external_validation=external_validation,
+                    confidence_threshold=confidence_threshold,
+                    entropy_threshold=entropy_threshold,
+                )
+            ]
     elif path.is_dir():
         # Directory scan with progress bar
         console.print(f"[bold]Collecting files from {path}...[/bold]")
@@ -186,7 +187,12 @@ def scan(
             task = progress.add_task("Scanning files...", total=len(files))
 
             for result in scan_files_with_progress(
-                files, compute_hash=compute_hash, **scan_options
+                files,
+                compute_hash=compute_hash,
+                use_context_analysis=context_analysis,
+                use_external_validation=external_validation,
+                confidence_threshold=confidence_threshold,
+                entropy_threshold=entropy_threshold,
             ):
                 results.append(result)
                 # Update progress with current file name (truncated)

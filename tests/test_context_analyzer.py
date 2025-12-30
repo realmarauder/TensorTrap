@@ -182,8 +182,7 @@ class TestContextAnalyzer:
 
         # ZIP signature but invalid header
         invalid_zip = (
-            b"PK\x03\x04"
-            b"\xff\xff" + b"\x00" * 24  # Invalid version (>100)
+            b"PK\x03\x04\xff\xff" + b"\x00" * 24  # Invalid version (>100)
         )
 
         result = analyzer._validate_archive_structure(invalid_zip, 0)
