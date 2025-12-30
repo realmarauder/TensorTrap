@@ -1,7 +1,6 @@
 """Tests for GGUF scanner."""
 
 import struct
-import pytest
 
 from tensortrap.scanner.gguf_scanner import scan_gguf
 from tensortrap.scanner.results import Severity
@@ -25,8 +24,9 @@ class TestGGUFScanner:
         # Should detect invalid magic
         magic_findings = [f for f in findings if "magic" in f.message.lower()]
         assert len(magic_findings) > 0, "Should detect invalid magic"
-        assert any(f.severity == Severity.CRITICAL for f in magic_findings), \
+        assert any(f.severity == Severity.CRITICAL for f in magic_findings), (
             "Invalid magic should be critical"
+        )
 
     def test_unknown_version(self, fixtures_dir):
         """Test handling of unknown GGUF version."""
@@ -157,5 +157,7 @@ class TestChatTemplate:
         assert len(critical) > 0, "Should detect Jinja injection attempt"
 
         # Should mention CVE
-        cve_findings = [f for f in findings if f.details and f.details.get("cve") == "CVE-2024-34359"]
+        cve_findings = [
+            f for f in findings if f.details and f.details.get("cve") == "CVE-2024-34359"
+        ]
         assert len(cve_findings) > 0, "Should reference CVE-2024-34359"

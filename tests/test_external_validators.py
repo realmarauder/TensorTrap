@@ -1,11 +1,9 @@
 """Tests for the external validators module."""
 
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tensortrap.scanner.external_validators import (
-    BaseExternalValidator,
     BinwalkValidator,
     ExiftoolValidator,
     ExternalValidationResult,

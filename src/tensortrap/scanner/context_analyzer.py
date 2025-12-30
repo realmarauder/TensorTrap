@@ -434,9 +434,7 @@ class ContextAnalyzer:
             return {"density": 0.0, "printable_count": 0, "total": 0}
 
         # Count printable ASCII (0x20-0x7E) plus common whitespace
-        printable_count = sum(
-            1 for b in chunk if (0x20 <= b <= 0x7E) or b in (0x09, 0x0A, 0x0D)
-        )
+        printable_count = sum(1 for b in chunk if (0x20 <= b <= 0x7E) or b in (0x09, 0x0A, 0x0D))
 
         density = printable_count / len(chunk)
 
@@ -520,7 +518,7 @@ class ContextAnalyzer:
             # code syntax that would indicate real code vs random match
             if is_high_entropy:
                 # Real code would have nearby: semicolons, braces, quotes, $variables
-                code_syntax_chars = b';{}()[]"\'\n$=<>'
+                code_syntax_chars = b";{}()[]\"'\n$=<>"
                 syntax_count = sum(1 for b in chunk if bytes([b]) in code_syntax_chars)
                 syntax_density = syntax_count / len(chunk) if chunk else 0
 
@@ -530,9 +528,13 @@ class ContextAnalyzer:
                 # Random binary hitting a keyword pattern has much less
                 if syntax_density > 0.05:
                     # Recheck - might actually be code
-                    result["evidence"] = f"syntax density {syntax_density:.1%} suggests possible code"
+                    result["evidence"] = (
+                        f"syntax density {syntax_density:.1%} suggests possible code"
+                    )
                 else:
-                    result["evidence"] = f"syntax density {syntax_density:.1%} - random binary match"
+                    result["evidence"] = (
+                        f"syntax density {syntax_density:.1%} - random binary match"
+                    )
 
         return result
 

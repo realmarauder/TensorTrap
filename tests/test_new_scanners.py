@@ -1,10 +1,7 @@
 """Tests for new scanners (ONNX, Keras, YAML, ComfyUI, obfuscation, magic)."""
 
 import json
-from pathlib import Path
 from zipfile import ZipFile
-
-import pytest
 
 from tensortrap.formats.magic import detect_format as detect_by_magic
 from tensortrap.scanner.comfyui_scanner import scan_comfyui_workflow
@@ -169,7 +166,9 @@ class TestKerasScanner:
 
         findings = scan_keras_file(filepath)
         # Should detect eval and os.system
-        critical_findings = [f for f in findings if f.severity in (Severity.CRITICAL, Severity.HIGH)]
+        critical_findings = [
+            f for f in findings if f.severity in (Severity.CRITICAL, Severity.HIGH)
+        ]
         assert len(critical_findings) > 0
 
 
@@ -208,7 +207,10 @@ command: rm -rf /
         critical = [f for f in findings if f.severity == Severity.CRITICAL]
         assert len(critical) > 0
         # Check that message mentions Python object or dangerous pattern
-        assert any("python" in f.message.lower() or "dangerous" in f.message.lower() for f in critical)
+        has_python_or_dangerous = any(
+            "python" in f.message.lower() or "dangerous" in f.message.lower() for f in critical
+        )
+        assert has_python_or_dangerous
 
     def test_yaml_os_system_pattern(self, tmp_path):
         """Test detecting os.system in YAML."""
@@ -432,7 +434,9 @@ class TestPyTorchZIPIntegration:
         # Create a ZIP with a malicious pickle
         with ZipFile(filepath, "w") as zf:
             # Pickle with GLOBAL opcode pointing to os.system
-            malicious_pickle = b"\x80\x04cos\nsystem\nq\x00X\x03\x00\x00\x00pwdq\x01\x85q\x02Rq\x03."
+            malicious_pickle = (
+                b"\x80\x04cos\nsystem\nq\x00X\x03\x00\x00\x00pwdq\x01\x85q\x02Rq\x03."
+            )
             zf.writestr("archive/data.pkl", malicious_pickle)
 
         from tensortrap.scanner.pickle_scanner import scan_pickle_file

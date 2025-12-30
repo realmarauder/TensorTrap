@@ -1,6 +1,5 @@
 """Tests for the context analyzer module."""
 
-import pytest
 from pathlib import Path
 
 from tensortrap.scanner.context_analyzer import (
@@ -157,16 +156,16 @@ class TestContextAnalyzer:
         # Minimal valid ZIP structure
         zip_data = (
             b"PK\x03\x04"  # Local file header signature
-            b"\x14\x00"    # Version needed
-            b"\x00\x00"    # Flags
-            b"\x08\x00"    # Compression method (deflate)
+            b"\x14\x00"  # Version needed
+            b"\x00\x00"  # Flags
+            b"\x08\x00"  # Compression method (deflate)
             b"\x00\x00\x00\x00"  # Mod time/date
             b"\x00\x00\x00\x00"  # CRC-32
             b"\x00\x00\x00\x00"  # Compressed size
             b"\x00\x00\x00\x00"  # Uncompressed size
-            b"\x08\x00"    # Filename length = 8
-            b"\x00\x00"    # Extra field length
-            b"test.txt"    # Filename
+            b"\x08\x00"  # Filename length = 8
+            b"\x00\x00"  # Extra field length
+            b"test.txt"  # Filename
             + b"\x00" * 100  # Some data
             + b"PK\x05\x06"  # End of central directory
             + b"\x00" * 18
@@ -184,8 +183,7 @@ class TestContextAnalyzer:
         # ZIP signature but invalid header
         invalid_zip = (
             b"PK\x03\x04"
-            b"\xff\xff"    # Invalid version (>100)
-            + b"\x00" * 24
+            b"\xff\xff" + b"\x00" * 24  # Invalid version (>100)
         )
 
         result = analyzer._validate_archive_structure(invalid_zip, 0)
@@ -200,10 +198,12 @@ class TestContextAnalyzer:
         # Data with PHP code
         data = b"\x00" * 100 + b"<?php system($_GET['cmd']); ?>" + b"\x00" * 100
 
-        result = analyzer._check_executable_context(data, 120)
+        result = analyzer._check_code_structure_context(
+            data, 120, pattern_name="php_code", is_high_entropy=False
+        )
 
-        assert result["has_executable"] is True
-        assert len(result["patterns"]) > 0
+        assert result["has_code_structure"] is True
+        assert len(result["patterns_found"]) > 0
 
     def test_executable_patterns_increase_confidence(self):
         """Executable patterns increase confidence score."""
@@ -230,7 +230,7 @@ class TestContextAnalyzer:
         filepath = Path("/test/file.png")
 
         # First call
-        result1 = analyzer.analyze(
+        _result1 = analyzer.analyze(
             file_data=data,
             match_offset=50,
             pattern_name="test",
@@ -240,7 +240,7 @@ class TestContextAnalyzer:
         )
 
         # Second call should use cache
-        result2 = analyzer.analyze(
+        _result2 = analyzer.analyze(
             file_data=data,
             match_offset=100,
             pattern_name="test",
