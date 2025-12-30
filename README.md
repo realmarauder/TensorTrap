@@ -1,6 +1,6 @@
 # TensorTrap
 
-Security scanner for AI/ML model files. Detect malicious code in pickle, safetensors, and GGUF files before loading them.
+This is a novel Security scanner for AI/ML model files. It detects malicious code in pickle, safetensors, and GGUF files before loading them into workflows. It also checks output files to see if the model files generated malicious code embedded within media files (e.g., jpeg, png, mp4) that could harm your environment when opening/viewing. 
 
 ## Why TensorTrap?
 
