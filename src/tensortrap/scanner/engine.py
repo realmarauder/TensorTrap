@@ -540,9 +540,9 @@ def _apply_external_validation(
             if result.status.value == "not_confirmed":
                 if "adjusted_severity" in updated_details:
                     orig = updated_details["adjusted_severity"]
-                    updated_details["adjusted_severity"] = orig.replace(
-                        "-HIGH", "-LOW"
-                    ).replace("-MEDIUM", "-LOW")
+                    updated_details["adjusted_severity"] = orig.replace("-HIGH", "-LOW").replace(
+                        "-MEDIUM", "-LOW"
+                    )
                     updated_details["external_override"] = True
 
             validated_finding = Finding(

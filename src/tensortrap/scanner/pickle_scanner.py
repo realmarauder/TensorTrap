@@ -79,8 +79,7 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
         # Also check parent modules (e.g., "urllib.request" -> check "urllib")
         module_parts = module.split(".")
         is_dangerous_module = any(
-            ".".join(module_parts[: i + 1]) in DANGEROUS_MODULES
-            for i in range(len(module_parts))
+            ".".join(module_parts[: i + 1]) in DANGEROUS_MODULES for i in range(len(module_parts))
         )
 
         if is_dangerous_module:
@@ -147,9 +146,7 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
     # Report REDUCE opcodes (function calls)
     # Only flag as high severity if we also found dangerous imports
     has_dangerous_imports = any(
-        f.severity in (Severity.CRITICAL, Severity.HIGH)
-        and f.details
-        and "module" in f.details
+        f.severity in (Severity.CRITICAL, Severity.HIGH) and f.details and "module" in f.details
         for f in findings
     )
 

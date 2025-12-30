@@ -99,9 +99,7 @@ def read_value(f, value_type: int) -> Any:
         raise ValueError(f"Unknown value type: {value_type}")
 
 
-def parse_header(
-    filepath: Path, max_metadata: int = 1000
-) -> tuple[GGUFHeader | None, str | None]:
+def parse_header(filepath: Path, max_metadata: int = 1000) -> tuple[GGUFHeader | None, str | None]:
     """Parse GGUF file header and metadata.
 
     Args:

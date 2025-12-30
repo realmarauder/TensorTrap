@@ -91,9 +91,7 @@ def parse_header(filepath: Path) -> tuple[SafetensorsHeader | None, str | None]:
         return None, f"Failed to read file: {e}"
 
 
-def validate_tensor_offsets(
-    filepath: Path, header: SafetensorsHeader
-) -> list[tuple[str, str]]:
+def validate_tensor_offsets(filepath: Path, header: SafetensorsHeader) -> list[tuple[str, str]]:
     """Validate that tensor offsets are within file bounds.
 
     Args:
@@ -109,9 +107,7 @@ def validate_tensor_offsets(
 
     for name, tensor_info in header.tensors.items():
         if not isinstance(tensor_info, dict):
-            errors.append(
-                (name, f"Tensor info is not a dict: {type(tensor_info).__name__}")
-            )
+            errors.append((name, f"Tensor info is not a dict: {type(tensor_info).__name__}"))
             continue
 
         offsets = tensor_info.get("data_offsets")

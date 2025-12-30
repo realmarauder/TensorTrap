@@ -51,9 +51,7 @@ class ScanResult:
     @property
     def is_safe(self) -> bool:
         """Check if the file is considered safe (no critical/high findings)."""
-        return not any(
-            f.severity in (Severity.CRITICAL, Severity.HIGH) for f in self.findings
-        )
+        return not any(f.severity in (Severity.CRITICAL, Severity.HIGH) for f in self.findings)
 
     @property
     def max_severity(self) -> Severity | None:

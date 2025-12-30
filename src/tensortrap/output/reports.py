@@ -86,9 +86,7 @@ def generate_txt_report(results: list[ScanResult], scan_path: str) -> str:
 
         if result.findings:
             lines.append("Findings:")
-            for finding in sorted(
-                result.findings, key=lambda f: list(Severity).index(f.severity)
-            ):
+            for finding in sorted(result.findings, key=lambda f: list(Severity).index(f.severity)):
                 icon = _severity_icon(finding.severity)
                 # Use adjusted severity if available from context analysis
                 severity_str = finding.severity.value.upper()
@@ -471,9 +469,7 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
 
         if result.findings:
             html += '                    <div class="findings">\n'
-            for finding in sorted(
-                result.findings, key=lambda f: list(Severity).index(f.severity)
-            ):
+            for finding in sorted(result.findings, key=lambda f: list(Severity).index(f.severity)):
                 sev_class = finding.severity.value
                 severity_str = finding.severity.value.upper()
 
@@ -529,9 +525,7 @@ def generate_html_report(results: list[ScanResult], scan_path: str) -> str:
                 html += "                        </div>\n"
             html += "                    </div>\n"
         else:
-            html += (
-                '                    <p class="no-findings">No security findings</p>\n'
-            )
+            html += '                    <p class="no-findings">No security findings</p>\n'
 
         html += """                </div>
             </div>
