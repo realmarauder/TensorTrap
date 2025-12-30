@@ -12,6 +12,10 @@ Architecture:
 
 This module does NOT reduce detection sensitivity. It adds intelligence
 to classify findings by confidence level.
+
+v0.3.3 - Fixed circular confirmation bug where trigger pattern was counted
+         as "executable context" confirmation. Now requires independent
+         code structure evidence.
 """
 
 import logging
@@ -113,6 +117,10 @@ class ContextAnalyzer:
     # Context window size for entropy calculation
     DEFAULT_CONTEXT_WINDOW = 1024
 
+    # Minimum ASCII density for "readable code" (0.0-1.0)
+    # Real code is typically 70%+ printable ASCII
+    MIN_CODE_ASCII_DENSITY = 0.65
+
     # AI generation tool signatures
     AI_METADATA_SIGNATURES = [
         # ComfyUI
@@ -163,26 +171,43 @@ class ContextAnalyzer:
         re.compile(rb"Model:\s*\w+", re.IGNORECASE),
     ]
 
-    # Executable code patterns that increase confidence
-    EXECUTABLE_PATTERNS = [
-        # ASP/VBScript with actual code
-        re.compile(rb"<%\s*(?:response|request|server|session)\.", re.IGNORECASE),
-        re.compile(rb"<%\s*(?:dim|set|if|for|while|function|sub)\s", re.IGNORECASE),
-        re.compile(rb"CreateObject\s*\(", re.IGNORECASE),
+    # Code structure patterns - these indicate REAL code, not isolated keywords
+    # These look for actual programming constructs, not just function names
+    CODE_STRUCTURE_PATTERNS = [
+        # ASP/VBScript with actual code structure
+        re.compile(rb"<%\s*(?:response|request|server|session)\.[a-z]+\s*[\(=]", re.IGNORECASE),
+        re.compile(rb"<%\s*(?:dim|set|if|for|while|function|sub)\s+\w+", re.IGNORECASE),
+        re.compile(rb'CreateObject\s*\(\s*["\']', re.IGNORECASE),
         re.compile(rb"WScript\.Shell", re.IGNORECASE),
-        # PHP
-        re.compile(rb"<\?php\s", re.IGNORECASE),
-        re.compile(rb"\$_(?:GET|POST|REQUEST|SERVER|FILES)\[", re.IGNORECASE),
-        re.compile(rb"(?:eval|exec|system|passthru|shell_exec)\s*\(", re.IGNORECASE),
-        # JavaScript in non-JS context
-        re.compile(rb"<script[^>]*>.*?</script>", re.IGNORECASE | re.DOTALL),
-        re.compile(rb"javascript\s*:", re.IGNORECASE),
-        # Shell
-        re.compile(rb"(?:^|[;&|`])\s*(?:bash|sh|cmd|powershell)\s", re.IGNORECASE),
-        re.compile(rb"/bin/(?:ba)?sh", re.IGNORECASE),
-        # Python
-        re.compile(rb"import\s+(?:os|subprocess|socket|sys)\b", re.IGNORECASE),
-        re.compile(rb"__import__\s*\(", re.IGNORECASE),
+        re.compile(rb"%>\s*$", re.MULTILINE),  # Closing tag at end of line
+        # PHP with actual code structure
+        re.compile(rb"<\?php\s+\$?\w+\s*[=\(;]", re.IGNORECASE),
+        re.compile(rb'\$_(?:GET|POST|REQUEST|SERVER|FILES)\s*\[\s*[\'"]', re.IGNORECASE),
+        re.compile(rb"(?:eval|exec|system|passthru|shell_exec)\s*\(\s*\$", re.IGNORECASE),
+        re.compile(rb";\s*\?>", re.IGNORECASE),  # Statement ending before close tag
+        # JavaScript with structure
+        re.compile(rb"<script[^>]*>\s*(?:var|let|const|function)\s+\w+", re.IGNORECASE),
+        re.compile(rb"document\.(?:write|getElementById|querySelector)\s*\(", re.IGNORECASE),
+        # Shell with actual commands
+        re.compile(rb"(?:^|\n)\s*(?:#!/bin/(?:ba)?sh|curl\s+|wget\s+|chmod\s+)", re.IGNORECASE),
+        re.compile(rb"\|\s*(?:bash|sh)\s*$", re.MULTILINE | re.IGNORECASE),
+        # Python with imports and structure
+        re.compile(rb"^import\s+(?:os|subprocess|socket|sys)\s*$", re.MULTILINE | re.IGNORECASE),
+        re.compile(rb"__import__\s*\(\s*['\"]", re.IGNORECASE),
+        re.compile(rb"(?:os|subprocess)\.(?:system|popen|call)\s*\(", re.IGNORECASE),
+    ]
+
+    # Simple keyword patterns - used to identify what triggered the alert
+    # These alone do NOT confirm a threat in binary data
+    TRIGGER_KEYWORDS = [
+        rb"eval\s*\(",
+        rb"exec\s*\(",
+        rb"system\s*\(",
+        rb"passthru\s*\(",
+        rb"shell_exec\s*\(",
+        rb"<%",
+        rb"<\?php",
+        rb"<script",
     ]
 
     def __init__(
@@ -236,7 +261,8 @@ class ContextAnalyzer:
         entropy_result = self._analyze_entropy(file_data, match_offset)
         context_data["entropy"] = entropy_result
 
-        if entropy_result["is_compressed"]:
+        is_high_entropy = entropy_result["is_compressed"]
+        if is_high_entropy:
             confidence *= 0.2
             reasons.append(
                 f"pattern in high-entropy region ({entropy_result['entropy']:.2f} bits/byte)"
@@ -254,15 +280,33 @@ class ContextAnalyzer:
                 confidence *= 0.1
                 reasons.append(f"invalid archive structure - {archive_result['reason']}")
 
-        # === ANALYSIS 3: Executable Context ===
-        exec_result = self._check_executable_context(file_data, match_offset)
-        context_data["executable_context"] = exec_result
+        # === ANALYSIS 3: Code Structure Context (NOT just keyword matching) ===
+        code_result = self._check_code_structure_context(
+            file_data, match_offset, pattern_name, is_high_entropy
+        )
+        context_data["code_structure"] = code_result
 
-        if exec_result["has_executable"]:
+        if code_result["has_code_structure"]:
+            # Real code structure found - this is a genuine threat indicator
             confidence = max(confidence, 0.9)
-            reasons.append(f"executable code patterns nearby: {', '.join(exec_result['patterns'])}")
+            reasons.append(f"code structure confirmed: {code_result['evidence']}")
+        elif code_result["isolated_keyword"]:
+            # Only found isolated keyword in binary - likely false positive
+            if is_high_entropy:
+                confidence *= 0.1
+                reasons.append("isolated keyword in compressed data (no code structure)")
 
-        # === ANALYSIS 4: AI Generation Metadata ===
+        # === ANALYSIS 4: ASCII Density Check ===
+        ascii_result = self._analyze_ascii_density(file_data, match_offset)
+        context_data["ascii_density"] = ascii_result
+
+        if ascii_result["density"] < self.MIN_CODE_ASCII_DENSITY and is_high_entropy:
+            confidence *= 0.5
+            reasons.append(
+                f"low ASCII density ({ascii_result['density']:.1%}) - binary data, not code"
+            )
+
+        # === ANALYSIS 5: AI Generation Metadata ===
         if file_format in ["image", "video"]:
             cache_key = str(filepath) if filepath else str(id(file_data))
 
@@ -278,7 +322,7 @@ class ContextAnalyzer:
                 confidence *= 0.15
                 reasons.append("AI generation metadata detected (ComfyUI/SD/Topaz)")
 
-        # === ANALYSIS 5: Pattern-Specific Checks ===
+        # === ANALYSIS 6: Pattern-Specific Checks ===
         pattern_result = self._pattern_specific_analysis(file_data, match_offset, pattern_name)
         if pattern_result:
             context_data["pattern_analysis"] = pattern_result
@@ -360,6 +404,137 @@ class ContextAnalyzer:
             "window_end": end,
             "window_size": len(chunk),
         }
+
+    def _analyze_ascii_density(
+        self,
+        data: bytes,
+        offset: int,
+        window: int = 512,
+    ) -> dict[str, Any]:
+        """
+        Calculate density of printable ASCII in region around offset.
+
+        Real code has high density of printable ASCII characters.
+        Random binary data matching keywords has low ASCII density.
+
+        Args:
+            data: Full file data
+            offset: Match offset
+            window: Window size to analyze
+
+        Returns:
+            Dictionary with ASCII density analysis
+        """
+        half_window = window // 2
+        start = max(0, offset - half_window)
+        end = min(len(data), offset + half_window)
+        chunk = data[start:end]
+
+        if not chunk:
+            return {"density": 0.0, "printable_count": 0, "total": 0}
+
+        # Count printable ASCII (0x20-0x7E) plus common whitespace
+        printable_count = sum(
+            1 for b in chunk if (0x20 <= b <= 0x7E) or b in (0x09, 0x0A, 0x0D)
+        )
+
+        density = printable_count / len(chunk)
+
+        return {
+            "density": density,
+            "printable_count": printable_count,
+            "total": len(chunk),
+            "window_start": start,
+            "window_end": end,
+        }
+
+    def _check_code_structure_context(
+        self,
+        data: bytes,
+        offset: int,
+        pattern_name: str,
+        is_high_entropy: bool,
+        window: int = 2048,
+    ) -> dict[str, Any]:
+        """
+        Check for actual code structure near the match.
+
+        This method distinguishes between:
+        1. Real embedded code (has structure: statements, variables, syntax)
+        2. Isolated keyword matches in binary data (no structure)
+
+        The key insight is that finding "eVAL(" in random binary is NOT the same
+        as finding "eval($_POST['cmd'])" in actual code.
+
+        Args:
+            data: Full file data
+            offset: Match offset
+            pattern_name: Name of triggering pattern (to avoid circular confirmation)
+            is_high_entropy: Whether region is compressed/encrypted
+            window: Bytes to check around offset
+
+        Returns:
+            Dictionary with code structure analysis
+        """
+        half_window = window // 2
+        start = max(0, offset - half_window)
+        end = min(len(data), offset + half_window)
+        chunk = data[start:end]
+
+        result: dict[str, Any] = {
+            "has_code_structure": False,
+            "isolated_keyword": False,
+            "evidence": None,
+            "patterns_found": [],
+        }
+
+        # First, check if we have actual code structure patterns
+        structure_matches = []
+        for pattern in self.CODE_STRUCTURE_PATTERNS:
+            match = pattern.search(chunk)
+            if match:
+                try:
+                    matched_text = match.group(0).decode("utf-8", errors="replace")[:60]
+                    structure_matches.append(matched_text)
+                except Exception:
+                    structure_matches.append("[binary match]")
+
+        if structure_matches:
+            result["has_code_structure"] = True
+            result["evidence"] = structure_matches[0]
+            result["patterns_found"] = structure_matches[:3]
+            return result
+
+        # No structure found - check if this is just an isolated keyword
+        # Look for the trigger patterns to see if that is all we have
+        keyword_found = False
+        for kw_pattern in self.TRIGGER_KEYWORDS:
+            if re.search(kw_pattern, chunk, re.IGNORECASE):
+                keyword_found = True
+                break
+
+        if keyword_found:
+            result["isolated_keyword"] = True
+
+            # Additional check: in high-entropy regions, look for surrounding
+            # code syntax that would indicate real code vs random match
+            if is_high_entropy:
+                # Real code would have nearby: semicolons, braces, quotes, $variables
+                code_syntax_chars = b';{}()[]"\'\n$=<>'
+                syntax_count = sum(1 for b in chunk if bytes([b]) in code_syntax_chars)
+                syntax_density = syntax_count / len(chunk) if chunk else 0
+
+                result["syntax_density"] = syntax_density
+
+                # Real code typically has 5%+ syntax characters
+                # Random binary hitting a keyword pattern has much less
+                if syntax_density > 0.05:
+                    # Recheck - might actually be code
+                    result["evidence"] = f"syntax density {syntax_density:.1%} suggests possible code"
+                else:
+                    result["evidence"] = f"syntax density {syntax_density:.1%} - random binary match"
+
+        return result
 
     def _is_archive_pattern(self, pattern_name: str) -> bool:
         """Check if pattern relates to embedded archives."""
@@ -529,45 +704,6 @@ class ContextAnalyzer:
             result["reason"] = f"struct parse error: {e}"
             return result
 
-    def _check_executable_context(
-        self,
-        data: bytes,
-        offset: int,
-        window: int = 2048,
-    ) -> dict[str, Any]:
-        """
-        Check for executable code patterns near the match.
-
-        Args:
-            data: Full file data
-            offset: Match offset
-            window: Bytes to check around offset
-
-        Returns:
-            Dictionary with executable context analysis
-        """
-        half_window = window // 2
-        start = max(0, offset - half_window)
-        end = min(len(data), offset + half_window)
-        chunk = data[start:end]
-
-        matched_patterns = []
-        for pattern in self.EXECUTABLE_PATTERNS:
-            if pattern.search(chunk):
-                # Extract pattern name from regex
-                pattern_str = (
-                    pattern.pattern.decode()
-                    if isinstance(pattern.pattern, bytes)
-                    else pattern.pattern
-                )
-                matched_patterns.append(pattern_str[:50])
-
-        return {
-            "has_executable": len(matched_patterns) > 0,
-            "patterns": matched_patterns[:5],  # Limit to first 5
-            "window_size": len(chunk),
-        }
-
     def _detect_ai_metadata(self, data: bytes) -> bool:
         """
         Detect AI generation tool metadata in file.
@@ -643,6 +779,30 @@ class ContextAnalyzer:
                 return {
                     "confidence_modifier": 0.3,
                     "reason": "ASP pattern without code structure",
+                }
+
+        # eval/exec patterns - require actual function call structure
+        if any(kw in pattern_lower for kw in ["eval", "exec", "system", "passthru"]):
+            start = max(0, offset - 100)
+            end = min(len(data), offset + 100)
+            context = data[start:end]
+
+            # Real eval() calls have: opening paren, content, closing paren
+            # And usually: $variable, quotes, or function calls inside
+            real_call_pattern = re.compile(
+                rb"(?:eval|exec|system|passthru|shell_exec)\s*\(\s*(?:\$|['\"]|[a-z_]+\()",
+                re.IGNORECASE,
+            )
+
+            if real_call_pattern.search(context):
+                return {
+                    "confidence_modifier": 2.5,
+                    "reason": "complete function call with arguments detected",
+                }
+            else:
+                return {
+                    "confidence_modifier": 0.2,
+                    "reason": "function name without proper call structure",
                 }
 
         return None
