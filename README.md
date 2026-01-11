@@ -152,49 +152,63 @@ Reports are saved with timestamps: `tensortrap_report_YYYYMMDD_HHMMSS.{txt,json,
 
 ## Benchmark Results
 
-TensorTrap has been tested against comprehensive malicious sample sets including CVE-based bypass techniques and polyglot attacks.
+TensorTrap achieves **100% detection rate** on comprehensive security benchmarks with zero false positives.
 
-### Detection Rate Comparison
+### Overall Results
 
-| Benchmark | TensorTrap | Picklescan |
-|-----------|------------|------------|
-| **Malicious Samples** | 11/11 (100%) | 0/11 (0%) |
-| **Polyglot Attacks** | 9/9 (100%) | 0/9 (0%) |
-| **False Positives** | 0 | 0 |
+| Metric | Result |
+|--------|--------|
+| **Overall Accuracy** | 43/43 (100%) |
+| **Malicious Detected** | 34/34 (100%) |
+| **False Positives** | 0 |
+| **False Negatives** | 0 |
 
-### Bypass Techniques Detected
+### Detection by Category
 
-| Technique | CVE | TensorTrap | Picklescan |
-|-----------|-----|------------|------------|
-| ZIP trailing data (pickle after EOCD) | CVE-2025-1889 | ✓ | ✗ |
-| 7z embedded pickle (nullifAI) | CVE-2025-1716 | ✓ | ✗ |
-| Magic byte mismatch (PNG header + pickle) | CVE-2025-1889 | ✓ | ✗ |
-| pip.main() bypass | CVE-2025-1716 | ✓ | ✗ |
-| runpy.run_module() bypass | - | ✓ | ✗ |
-| code.InteractiveInterpreter | - | ✓ | ✗ |
-| Double extension (.pkl.png) | - | ✓ | ✗ |
-| JPEG polyglot (pickle in comment) | - | ✓ | ✗ |
+| Category | Detection Rate |
+|----------|---------------|
+| Pickle Bypass | 9/9 (100%) |
+| JFrog Zero-Days | 6/6 (100%) |
+| Polyglot Attacks | 4/4 (100%) |
+| GGUF (Jinja Injection) | 1/1 (100%) |
+| ONNX (Path Traversal) | 2/2 (100%) |
+| YAML (Unsafe Deserialization) | 2/2 (100%) |
+| ComfyUI (ACE/Eval) | 2/2 (100%) |
+| Keras/HDF5 (Lambda Layer) | 2/2 (100%) |
+| Safetensors | 3/3 (100%) |
+| SVG (Script Injection) | 3/3 (100%) |
+| Benign (No FP) | 9/9 (100%) |
 
-### Polyglot Detection by Type
+### CVE Coverage
 
-| Type | Description | TensorTrap |
-|------|-------------|------------|
-| **Stack** | Data appended after valid file | 3/3 ✓ |
-| **Parasite** | Data embedded within file | 1/1 ✓ |
-| **Magic Mismatch** | Fake headers hiding pickle | 5/5 ✓ |
+| CVE | Description | Detection |
+|-----|-------------|-----------|
+| CVE-2025-1716 | nullifAI 7z/pip bypass | 2/2 (100%) |
+| CVE-2025-1889 | ZIP trailing data bypass | 2/2 (100%) |
+| CVE-2025-10155 | Extension bypass (.bin/.pt) | 2/2 (100%) |
+| CVE-2025-10156 | ZIP zeroed CRC bypass | 1/1 (100%) |
+| CVE-2025-10157 | asyncio/_posixsubprocess bypass | 3/3 (100%) |
+| CVE-2024-34359 | GGUF Jinja template injection | 1/1 (100%) |
+| CVE-2024-27318 | ONNX path traversal | 1/1 (100%) |
+| CVE-2024-5187 | ONNX arbitrary file read | 1/1 (100%) |
+| CVE-2025-50460 | YAML unsafe deserialization | 1/1 (100%) |
+| CVE-2024-21576 | ComfyUI ACE eval | 1/1 (100%) |
+| CVE-2024-21577 | ComfyUI HueAdjust eval | 1/1 (100%) |
 
 ### Running Benchmarks
 
 ```bash
-# Run main benchmark suite
-python tests/test_benchmark_tensortrap.py --setup
-python tests/test_benchmark_tensortrap.py --run
+# Run comprehensive benchmark suite
+python tests/benchmark_comprehensive.py --all
 
-# Run Mitra polyglot tests
-python tests/test_mitra_polyglot_tests.py --setup
-python tests/test_mitra_polyglot_tests.py --generate
-python tests/test_mitra_polyglot_tests.py --test
-python tests/test_mitra_polyglot_tests.py --report
+# Setup only (generate test files)
+python tests/benchmark_comprehensive.py --setup
+
+# Run tests only (after setup)
+python tests/benchmark_comprehensive.py --run
+
+# View latest report
+python tests/benchmark_comprehensive.py --report
 ```
 
 ## Exit Codes
