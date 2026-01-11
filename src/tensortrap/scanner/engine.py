@@ -574,7 +574,9 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
                         pf.details["source"] = "zip_raw_extraction"
                         pf.details["base_offset"] = offset
                         pf.details["filename"] = fname
-                        if raw_scan["has_zeroed_crc"] and fname in raw_scan.get("zeroed_crc_files", []):
+                        if raw_scan["has_zeroed_crc"] and fname in raw_scan.get(
+                            "zeroed_crc_files", []
+                        ):
                             pf.details["zeroed_crc"] = True
                             pf.details["cve"] = "CVE-2025-10156"
                     findings.extend(pickle_findings)
