@@ -5,6 +5,19 @@ All notable changes to TensorTrap will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-01-11
+
+### Changed
+- **Production Release**: TensorTrap is now production-ready
+- Updated Development Status classifier to "Production/Stable"
+- All features from v0.4.0 included in this stable release
+
+### Highlights
+- 100% detection rate on malicious model benchmarks
+- Archive bypass detection (CVE-2025-1889, CVE-2025-1716)
+- Multi-tier context analysis for reduced false positives
+- Comprehensive scanner support: Pickle, SafeTensors, GGUF, ONNX, Keras, PyTorch, ComfyUI
+
 ## [0.4.0] - 2026-01-11
 
 ### Added

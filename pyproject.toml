@@ -1,6 +1,6 @@
 [project]
 name = "tensortrap"
-version = "0.4.0"
+version = "1.0.0"
 description = "Security scanner for AI/ML model files"
 readme = "README.md"
 license = {text = "MIT"}
@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = ["security", "ai", "ml", "machine-learning", "scanner", "pickle", "safetensors", "gguf", "malware", "comfyui", "swarmui", "huggingface", "civitai"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
