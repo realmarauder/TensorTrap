@@ -523,7 +523,7 @@ def run_tests(tensortrap_path: str = "tensortrap"):
         # Run TensorTrap
         try:
             tt_result = subprocess.run(
-                [tensortrap_path, str(path)],
+                [tensortrap_path, 'scan', str(path)],
                 capture_output=True,
                 text=True,
                 timeout=60
