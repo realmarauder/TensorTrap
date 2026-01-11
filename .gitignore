@@ -77,3 +77,10 @@ dmypy.json
 # OS files
 .DS_Store
 Thumbs.db
+
+# Benchmark generated files
+benchmark_tests/
+benchmark_results/
+polyglot_tests/
+polyglot_results/
+mitra/
