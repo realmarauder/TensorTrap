@@ -119,9 +119,21 @@ def extract_globals(data: bytes) -> list[tuple[str, str, int]]:
                 stack.pop()
             stack.append("<instance>")
         # Other opcodes that push values
-        elif op.name in ("NONE", "NEWTRUE", "NEWFALSE", "BININT", "BININT1",
-                         "BININT2", "BINFLOAT", "EMPTY_DICT", "EMPTY_LIST",
-                         "EMPTY_TUPLE", "EMPTY_SET", "BINGET", "LONG_BINGET"):
+        elif op.name in (
+            "NONE",
+            "NEWTRUE",
+            "NEWFALSE",
+            "BININT",
+            "BININT1",
+            "BININT2",
+            "BINFLOAT",
+            "EMPTY_DICT",
+            "EMPTY_LIST",
+            "EMPTY_TUPLE",
+            "EMPTY_SET",
+            "BINGET",
+            "LONG_BINGET",
+        ):
             stack.append("<value>")
 
     return globals_found

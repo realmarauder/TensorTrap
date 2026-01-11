@@ -87,8 +87,17 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
             # Check if the base module is in CRITICAL category
             base_module = module_parts[0]
             if base_module in (
-                "os", "subprocess", "builtins", "socket", "posix", "nt",
-                "_posixsubprocess", "_winapi", "asyncio", "pip", "multiprocessing"
+                "os",
+                "subprocess",
+                "builtins",
+                "socket",
+                "posix",
+                "nt",
+                "_posixsubprocess",
+                "_winapi",
+                "asyncio",
+                "pip",
+                "multiprocessing",
             ):
                 severity = Severity.CRITICAL
             elif base_module in ("sys", "importlib", "pickle", "marshal"):
@@ -323,9 +332,7 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
         try:
             with open(filepath, "rb") as f:
                 data = f.read()
-            for fname, offset in zip(
-                raw_scan["pickle_files_found"], raw_scan["pickle_offsets"]
-            ):
+            for fname, offset in zip(raw_scan["pickle_files_found"], raw_scan["pickle_offsets"]):
                 pickle_data = data[offset:]
                 pickle_findings = scan_pickle(pickle_data, filepath)
 
