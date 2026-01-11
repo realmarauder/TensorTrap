@@ -267,7 +267,7 @@ rkhunter --check                        # System integrity
 clamscan -r ~/Downloads                 # General malware
 ```
 ## Read More at M2Dynamics.us
-[https://m2dynamics.us/2026/01/11/tensortrap/](url)
+[https://m2dynamics.us/2026/01/11/tensortrap/]
 
 ## Contributing
 
