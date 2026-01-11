@@ -121,8 +121,8 @@ class TestSafetensorsScanner:
 
         findings = scan_safetensors(filepath)
 
-        # Should detect invalid offsets
-        offset_findings = [f for f in findings if "offset" in f.message.lower()]
+        # Should detect invalid offsets (reported as truncated file)
+        offset_findings = [f for f in findings if "truncated" in f.message.lower() or "exceed" in f.message.lower()]
         assert len(offset_findings) > 0, "Should detect invalid tensor offsets"
 
 
