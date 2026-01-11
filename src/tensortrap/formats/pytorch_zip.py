@@ -2,11 +2,35 @@
 
 PyTorch saves models as ZIP archives containing pickle files.
 This module extracts and analyzes the internal structure.
+
+Enhanced with trailing data detection (CVE-2025-1889 style bypass)
+and 7z archive pickle scanning.
 """
 
+import struct
 import zipfile
 from pathlib import Path
 from typing import Any
+
+# Pickle protocol signatures for detecting embedded pickles
+PICKLE_SIGNATURES = [
+    b"\x80\x02",  # Protocol 2
+    b"\x80\x03",  # Protocol 3
+    b"\x80\x04",  # Protocol 4
+    b"\x80\x05",  # Protocol 5
+]
+
+# Valid pickle opcodes that should follow the protocol marker
+VALID_FRAME_OPCODES = {
+    0x63,  # GLOBAL (c)
+    0x7D,  # EMPTY_DICT (})
+    0x5D,  # EMPTY_LIST (])
+    0x29,  # EMPTY_TUPLE ())
+    0x28,  # MARK (()
+    0x8C,  # SHORT_BINUNICODE
+    0x89,  # NEWOBJ_EX
+    0x81,  # NEWOBJ
+}
 
 
 def is_pytorch_zip(filepath: Path) -> bool:
@@ -128,3 +152,245 @@ def analyze_zip_structure(filepath: Path) -> dict[str, Any]:
         info["error"] = error_msg
 
     return info
+
+
+def _is_valid_pickle_at(data: bytes, pos: int) -> bool:
+    """Validate that a pickle signature at position is followed by valid opcodes.
+
+    This reduces false positives by ensuring the 2-byte protocol marker
+    is actually part of a real pickle stream.
+
+    Args:
+        data: The full data buffer
+        pos: Position of the pickle signature
+
+    Returns:
+        True if this looks like a real pickle
+    """
+    if pos + 2 >= len(data):
+        return False
+
+    protocol = data[pos + 1]
+    next_byte = data[pos + 2]
+
+    # Protocol 4 and 5: Expect FRAME opcode (0x95) with valid structure
+    if protocol >= 4:
+        if next_byte != 0x95:  # Must be FRAME
+            return False
+        # FRAME is followed by 8-byte length
+        if pos + 11 >= len(data):
+            return False
+        frame_len = int.from_bytes(data[pos + 3 : pos + 11], "little")
+        # Frame length must be reasonable (1 byte to 100MB)
+        if frame_len < 1 or frame_len > 100_000_000:
+            return False
+        # Check byte after frame header is valid opcode
+        if pos + 11 < len(data):
+            opcode_after_frame = data[pos + 11]
+            if opcode_after_frame not in VALID_FRAME_OPCODES:
+                return False
+        return True
+
+    # Protocol 2 and 3: Only accept GLOBAL opcode with proper structure
+    if protocol in (2, 3):
+        if next_byte != 0x63:  # GLOBAL (c)
+            return False
+        # GLOBAL is followed by "module\nname\n"
+        if pos + 10 >= len(data):
+            return False
+        found_newline = False
+        for i in range(pos + 3, min(pos + 258, len(data))):
+            b = data[i]
+            if b == 0x0A:  # newline
+                found_newline = True
+                break
+            # Must be printable ASCII
+            if not (0x2E <= b <= 0x39 or 0x41 <= b <= 0x5A or 0x5F == b or 0x61 <= b <= 0x7A):
+                return False
+        return found_newline
+
+    return False
+
+
+def find_zip_end(data: bytes) -> int | None:
+    """Find the end of a ZIP archive (after EOCD record).
+
+    ZIP files end with the End of Central Directory (EOCD) record.
+    This function finds the EOCD and returns the byte offset just after it.
+
+    Args:
+        data: File contents
+
+    Returns:
+        Byte offset just after ZIP ends, or None if no valid EOCD found
+    """
+    # EOCD signature
+    eocd_sig = b"PK\x05\x06"
+
+    # Search for EOCD from end (it can have a variable-length comment)
+    # EOCD is minimum 22 bytes, max comment is 65535 bytes
+    search_start = max(0, len(data) - 65557)
+
+    # Find the LAST occurrence of EOCD signature
+    pos = data.rfind(eocd_sig, search_start)
+
+    if pos < 0:
+        return None
+
+    # EOCD structure:
+    # 4 bytes: signature (PK\x05\x06)
+    # 2 bytes: disk number
+    # 2 bytes: disk with central directory
+    # 2 bytes: entries on this disk
+    # 2 bytes: total entries
+    # 4 bytes: central directory size
+    # 4 bytes: central directory offset
+    # 2 bytes: comment length
+    # N bytes: comment
+
+    if pos + 22 > len(data):
+        return None
+
+    # Read comment length (little-endian uint16 at offset 20)
+    comment_len: int = struct.unpack("<H", data[pos + 20 : pos + 22])[0]
+
+    # Calculate end of ZIP
+    zip_end: int = pos + 22 + comment_len
+
+    return zip_end
+
+
+def check_zip_trailing_data(filepath: Path) -> dict[str, Any]:
+    """Check for data appended after a ZIP archive (CVE-2025-1889 bypass).
+
+    Attackers can append malicious pickle data after the ZIP EOCD.
+    ZIP parsers ignore trailing data, but if the file is loaded as
+    a pickle, the trailing malicious code executes.
+
+    Args:
+        filepath: Path to ZIP archive
+
+    Returns:
+        Dict with trailing data info and any findings
+    """
+    result: dict[str, Any] = {
+        "has_trailing_data": False,
+        "zip_end_offset": None,
+        "file_size": 0,
+        "trailing_size": 0,
+        "trailing_contains_pickle": False,
+        "pickle_offset": None,
+        "pickle_protocol": None,
+    }
+
+    try:
+        with open(filepath, "rb") as f:
+            data = f.read()
+    except OSError:
+        return result
+
+    result["file_size"] = len(data)
+
+    # Find where ZIP ends
+    zip_end = find_zip_end(data)
+    if zip_end is None:
+        return result
+
+    result["zip_end_offset"] = zip_end
+
+    # Check for trailing data
+    if zip_end < len(data):
+        trailing_size = len(data) - zip_end
+        result["has_trailing_data"] = True
+        result["trailing_size"] = trailing_size
+
+        # Check if trailing data contains pickle
+        trailing_data = data[zip_end:]
+        for pickle_sig in PICKLE_SIGNATURES:
+            pos = trailing_data.find(pickle_sig)
+            if pos >= 0:
+                abs_pos = zip_end + pos
+                if _is_valid_pickle_at(data, abs_pos):
+                    result["trailing_contains_pickle"] = True
+                    result["pickle_offset"] = abs_pos
+                    result["pickle_protocol"] = pickle_sig[1]
+                    break
+
+    return result
+
+
+def scan_7z_for_pickle(filepath: Path) -> dict[str, Any]:
+    """Scan a 7z archive for embedded pickle data (CVE-2025-1889 bypass).
+
+    7z archives can contain pickle files that bypass security scanners.
+    This function scans the raw 7z file bytes for pickle signatures.
+
+    Note: We scan raw bytes because extracting 7z requires additional
+    dependencies (py7zr). Raw byte scanning catches the most common
+    attack patterns where pickle data is embedded directly.
+
+    Args:
+        filepath: Path to 7z archive
+
+    Returns:
+        Dict with scan results
+    """
+    result: dict[str, Any] = {
+        "is_7z": False,
+        "contains_pickle": False,
+        "pickle_offsets": [],
+        "pickle_protocols": [],
+        "file_size": 0,
+    }
+
+    try:
+        with open(filepath, "rb") as f:
+            data = f.read()
+    except OSError:
+        return result
+
+    result["file_size"] = len(data)
+
+    # Verify 7z magic
+    if not data.startswith(b"7z\xbc\xaf\x27\x1c"):
+        return result
+
+    result["is_7z"] = True
+
+    # Scan for pickle signatures throughout the file
+    # Skip the 7z header (first 32 bytes)
+    for pickle_sig in PICKLE_SIGNATURES:
+        pos = 32  # Start after 7z header
+        while pos < len(data):
+            pos = data.find(pickle_sig, pos)
+            if pos < 0:
+                break
+            if _is_valid_pickle_at(data, pos):
+                result["contains_pickle"] = True
+                result["pickle_offsets"].append(pos)
+                result["pickle_protocols"].append(pickle_sig[1])
+            pos += 1
+
+    return result
+
+
+def extract_trailing_pickle(filepath: Path) -> bytes | None:
+    """Extract pickle data appended after a ZIP archive.
+
+    Args:
+        filepath: Path to ZIP file with potential trailing pickle
+
+    Returns:
+        Pickle bytes if found, None otherwise
+    """
+    trailing_info = check_zip_trailing_data(filepath)
+
+    if not trailing_info["trailing_contains_pickle"]:
+        return None
+
+    try:
+        with open(filepath, "rb") as f:
+            f.seek(trailing_info["pickle_offset"])
+            return f.read()
+    except (OSError, TypeError):
+        return None

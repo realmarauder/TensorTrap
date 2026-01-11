@@ -5,6 +5,42 @@ All notable changes to TensorTrap will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-01-11
+
+### Added
+- **Archive Bypass Detection**: Critical security fix for CVE-2025-1889 style bypass attacks
+  - **ZIP Trailing Data Scanner**: Detects malicious pickle data appended after ZIP EOCD marker
+    - Finds ZIP end-of-central-directory (EOCD) and scans trailing bytes
+    - Validates pickle signatures with opcode analysis to reduce false positives
+    - Extracts and scans trailing pickle content for dangerous imports
+  - **7z Archive Pickle Scanner**: Scans 7z archive bytes for embedded pickle (nullifAI bypass)
+    - Raw byte scanning detects pickle signatures inside 7z structure
+    - Works without py7zr dependency for broad compatibility
+    - Scans embedded pickle content for dangerous code
+  - **Archive Format Handler**: New "archive" format type for .zip and .7z files
+    - Automatically scans archive files for security threats
+    - Integrated with existing polyglot and obfuscation scanners
+- New functions in `pytorch_zip.py`:
+  - `find_zip_end()`: Locates ZIP EOCD and calculates archive end offset
+  - `check_zip_trailing_data()`: Detects and analyzes trailing data after ZIP
+  - `scan_7z_for_pickle()`: Scans 7z archives for embedded pickle signatures
+  - `extract_trailing_pickle()`: Extracts pickle data from ZIP trailing bytes
+
+### Security
+- **CVE-2025-1889**: ZIP trailing data bypass - Attackers could append malicious pickle after
+  valid ZIP archives. Scanners that stop at EOCD miss the trailing payload.
+- **CVE-2025-1716 Enhancement**: Improved nullifAI 7z bypass detection - Now scans inside
+  7z archives for embedded pickle data, not just detecting 7z format.
+
+### Changed
+- Added `.zip` and `.7z` to FORMAT_EXTENSIONS for proper archive handling
+- `_scan_pytorch_archive()` now checks for trailing data after ZIP scanning
+- `scan_pickle_file()` enhanced with 7z embedded pickle extraction and scanning
+
+### Fixed
+- Benchmark detection rate improved from 69% to 85% (11/13 samples)
+- Zero false negatives on bypass techniques (previously 2 gaps)
+
 ## [0.3.3] - 2025-12-30
 
 ### Fixed

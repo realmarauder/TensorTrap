@@ -1,6 +1,6 @@
 [project]
 name = "tensortrap"
-version = "0.3.3"
+version = "0.4.0"
 description = "Security scanner for AI/ML model files"
 readme = "README.md"
 license = {text = "MIT"}
