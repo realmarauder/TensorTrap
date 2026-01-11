@@ -46,6 +46,10 @@ def parse_pickle_ops(data: bytes) -> Iterator[PickleOp]:
 def extract_globals(data: bytes) -> list[tuple[str, str, int]]:
     """Extract all GLOBAL/STACK_GLOBAL imports from pickle.
 
+    For STACK_GLOBAL (protocol 4+), we simulate the stack to extract
+    the actual module and name values that were pushed via
+    SHORT_BINUNICODE or BINUNICODE opcodes.
+
     Args:
         data: Raw pickle bytecode
 
@@ -53,6 +57,7 @@ def extract_globals(data: bytes) -> list[tuple[str, str, int]]:
         List of (module, name, position) tuples
     """
     globals_found = []
+    stack: list[str] = []  # Simple stack simulation for string values
 
     for op in parse_pickle_ops(data):
         if op.name == "GLOBAL" and op.arg:
@@ -63,10 +68,61 @@ def extract_globals(data: bytes) -> list[tuple[str, str, int]]:
             else:
                 module, name = parts[0], ""
             globals_found.append((module, name, op.pos))
+            stack.append("<callable>")  # Result of GLOBAL goes on stack
+
         elif op.name == "STACK_GLOBAL":
-            # STACK_GLOBAL gets module and name from stack
-            # We can't determine the actual values without execution
-            globals_found.append(("<stack>", "<stack>", op.pos))
+            # STACK_GLOBAL pops name then module from stack
+            if len(stack) >= 2:
+                name = stack.pop()
+                module = stack.pop()
+                globals_found.append((module, name, op.pos))
+            else:
+                # Couldn't determine values, fall back to placeholder
+                globals_found.append(("<stack>", "<stack>", op.pos))
+            stack.append("<callable>")  # Result goes on stack
+
+        # Track string values pushed to stack
+        elif op.name in ("SHORT_BINUNICODE", "BINUNICODE", "BINUNICODE8") and op.arg:
+            stack.append(op.arg)
+
+        elif op.name in ("SHORT_BINSTRING", "BINSTRING") and op.arg:
+            stack.append(op.arg)
+
+        elif op.name == "UNICODE" and op.arg:
+            stack.append(op.arg)
+
+        # Handle opcodes that pop from stack
+        elif op.name == "MEMOIZE":
+            pass  # Doesn't affect stack
+        elif op.name == "POP":
+            if stack:
+                stack.pop()
+        elif op.name == "POP_MARK":
+            # Pop everything back to mark - simplified, just clear stack
+            stack.clear()
+        elif op.name in ("TUPLE1", "TUPLE2", "TUPLE3"):
+            # Pop N items, push tuple
+            n = int(op.name[-1])
+            for _ in range(min(n, len(stack))):
+                stack.pop()
+            stack.append("<tuple>")
+        elif op.name == "REDUCE":
+            # Pop args and callable, push result
+            if len(stack) >= 2:
+                stack.pop()  # args
+                stack.pop()  # callable
+            stack.append("<result>")
+        elif op.name in ("NEWOBJ", "NEWOBJ_EX"):
+            # Pop class and args, push instance
+            if len(stack) >= 2:
+                stack.pop()
+                stack.pop()
+            stack.append("<instance>")
+        # Other opcodes that push values
+        elif op.name in ("NONE", "NEWTRUE", "NEWFALSE", "BININT", "BININT1",
+                         "BININT2", "BINFLOAT", "EMPTY_DICT", "EMPTY_LIST",
+                         "EMPTY_TUPLE", "EMPTY_SET", "BINGET", "LONG_BINGET"):
+            stack.append("<value>")
 
     return globals_found
 

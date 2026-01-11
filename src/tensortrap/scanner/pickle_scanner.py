@@ -84,9 +84,14 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
 
         if is_dangerous_module:
             # Determine severity based on the specific module/function
-            if module in ("os", "subprocess", "builtins", "socket"):
+            # Check if the base module is in CRITICAL category
+            base_module = module_parts[0]
+            if base_module in (
+                "os", "subprocess", "builtins", "socket", "posix", "nt",
+                "_posixsubprocess", "_winapi", "asyncio", "pip", "multiprocessing"
+            ):
                 severity = Severity.CRITICAL
-            elif module in ("sys", "importlib", "pickle", "marshal"):
+            elif base_module in ("sys", "importlib", "pickle", "marshal"):
                 severity = Severity.HIGH
             else:
                 severity = Severity.HIGH
@@ -272,7 +277,8 @@ def scan_pickle_file(filepath: Path) -> list[Finding]:
 def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
     """Scan a PyTorch ZIP archive for security issues.
 
-    Also checks for trailing data after the ZIP archive (CVE-2025-1889 bypass).
+    Also checks for trailing data after the ZIP archive (CVE-2025-1889 bypass)
+    and zeroed CRC attacks (CVE-2025-10156 bypass).
 
     Args:
         filepath: Path to PyTorch .pt/.pth file
@@ -285,11 +291,59 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
         check_zip_trailing_data,
         extract_pickle_files,
         extract_trailing_pickle,
+        scan_zip_raw_for_pickle,
     )
 
     findings = []
 
-    # Analyze ZIP structure
+    # CVE-2025-10156: Scan raw ZIP structure for zeroed CRCs
+    # This bypasses zipfile.ZipFile which may fail on corrupted CRCs
+    raw_scan = scan_zip_raw_for_pickle(filepath)
+
+    if raw_scan["has_zeroed_crc"]:
+        findings.append(
+            Finding(
+                severity=Severity.HIGH,
+                message=(
+                    f"ZIP archive has zeroed CRC values (CVE-2025-10156 bypass): "
+                    f"{', '.join(raw_scan['zeroed_crc_files'][:3])}"
+                ),
+                location=0,
+                details={
+                    "technique": "zip_crc_bypass",
+                    "zeroed_crc_files": raw_scan["zeroed_crc_files"],
+                    "cve": "CVE-2025-10156",
+                    "warning": "Zeroed CRCs may bypass integrity checks",
+                },
+            )
+        )
+
+    if raw_scan["contains_pickle"]:
+        # Scan the pickle content from raw offsets to check if actually malicious
+        try:
+            with open(filepath, "rb") as f:
+                data = f.read()
+            for fname, offset in zip(
+                raw_scan["pickle_files_found"], raw_scan["pickle_offsets"]
+            ):
+                pickle_data = data[offset:]
+                pickle_findings = scan_pickle(pickle_data, filepath)
+
+                # Add metadata to pickle findings
+                for pf in pickle_findings:
+                    if pf.details is None:
+                        pf.details = {}
+                    pf.details["source"] = "zip_raw_extraction"
+                    pf.details["base_offset"] = offset
+                    pf.details["filename"] = fname
+                    if raw_scan["has_zeroed_crc"] and fname in raw_scan.get("zeroed_crc_files", []):
+                        pf.details["zeroed_crc"] = True
+                        pf.details["cve"] = "CVE-2025-10156"
+                findings.extend(pickle_findings)
+        except OSError:
+            pass
+
+    # Analyze ZIP structure (may fail with zeroed CRCs, but try anyway)
     zip_info = analyze_zip_structure(filepath)
 
     if not zip_info["is_valid_zip"]:
