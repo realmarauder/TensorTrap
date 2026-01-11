@@ -4,6 +4,7 @@ Safetensors is designed to be safe (no code execution), but we validate
 structure and check for anomalies or embedded malicious content.
 """
 
+import base64
 import re
 from pathlib import Path
 
@@ -13,6 +14,14 @@ from tensortrap.formats.safetensors_parser import (
 )
 from tensortrap.scanner.results import Finding, Severity
 from tensortrap.signatures.patterns import SUSPICIOUS_PATTERNS
+
+# Pickle protocol markers
+PICKLE_SIGNATURES = [
+    b"\x80\x02",  # Protocol 2
+    b"\x80\x03",  # Protocol 3
+    b"\x80\x04",  # Protocol 4
+    b"\x80\x05",  # Protocol 5
+]
 
 # Maximum reasonable header size (10MB)
 MAX_HEADER_SIZE = 10_000_000
@@ -76,6 +85,9 @@ def scan_safetensors(filepath: Path) -> list[Finding]:
             other_errors.append((tensor_name, error_msg))
 
     # Consolidate truncation errors into single finding
+    # NOTE: Truncation is MEDIUM severity as it's usually incomplete downloads
+    # or test files, not malicious content. Actual attacks in safetensors
+    # would be via metadata or embedded code patterns.
     if truncation_errors:
         # Get file size from first error message for context
         file_size = None
@@ -90,14 +102,15 @@ def scan_safetensors(filepath: Path) -> list[Finding]:
         count = len(truncation_errors)
         findings.append(
             Finding(
-                severity=Severity.HIGH,
-                message=f"Invalid tensor offset: {count} tensor(s) exceed file size",
+                severity=Severity.MEDIUM,
+                message=f"Truncated file: {count} tensor(s) exceed file size",
                 location=8,
                 details={
                     "truncated_tensors": count,
                     "total_tensors": len(header.tensors),
                     "file_size": file_size,
                     "sample_tensors": [t[0] for t in truncation_errors[:5]],
+                    "likely_cause": "incomplete_download",
                 },
             )
         )
@@ -147,6 +160,33 @@ def _scan_metadata(metadata: dict[str, str]) -> list[Finding]:
                     details={"key": key, "pattern": "pickle_marker"},
                 )
             )
+
+        # Check for base64-encoded pickle
+        # Base64 pickle starts with "gA" (for \x80\x02), "gAM" (for \x80\x03), etc.
+        if len(value) > 20:  # Minimum reasonable base64 pickle size
+            try:
+                # Try to decode as base64
+                decoded = base64.b64decode(value, validate=True)
+                # Check if decoded content starts with pickle signature
+                for pickle_sig in PICKLE_SIGNATURES:
+                    if decoded.startswith(pickle_sig):
+                        findings.append(
+                            Finding(
+                                severity=Severity.CRITICAL,
+                                message=f"Base64-encoded pickle in metadata key: {key}",
+                                location=8,
+                                details={
+                                    "key": key,
+                                    "pattern": "base64_pickle",
+                                    "pickle_protocol": pickle_sig[1],
+                                    "decoded_size": len(decoded),
+                                },
+                            )
+                        )
+                        break
+            except Exception:
+                # Not valid base64, ignore
+                pass
 
         # Check for suspicious code patterns
         suspicious_strings = [

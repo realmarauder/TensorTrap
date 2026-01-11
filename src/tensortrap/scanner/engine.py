@@ -477,6 +477,7 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
         is_7z_archive,
         is_pytorch_zip,
         scan_7z_for_pickle,
+        scan_zip_raw_for_pickle,
     )
     from tensortrap.scanner.pickle_scanner import scan_pickle
 
@@ -534,6 +535,52 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
 
     # Handle ZIP archives
     if ext == ".zip" or is_pytorch_zip(filepath):
+        # CVE-2025-10156: Scan raw ZIP structure for zeroed CRCs
+        raw_scan = scan_zip_raw_for_pickle(filepath)
+
+        if raw_scan["has_zeroed_crc"]:
+            findings.append(
+                Finding(
+                    severity=Severity.HIGH,
+                    message=(
+                        f"ZIP archive has zeroed CRC values (CVE-2025-10156 bypass): "
+                        f"{', '.join(raw_scan['zeroed_crc_files'][:3])}"
+                    ),
+                    location=0,
+                    details={
+                        "technique": "zip_crc_bypass",
+                        "zeroed_crc_files": raw_scan["zeroed_crc_files"],
+                        "cve": "CVE-2025-10156",
+                        "warning": "Zeroed CRCs may bypass integrity checks",
+                    },
+                )
+            )
+
+        if raw_scan["contains_pickle"]:
+            # Scan the pickle content from raw offsets to check if actually malicious
+            try:
+                with open(filepath, "rb") as f:
+                    data = f.read()
+                for fname, offset in zip(
+                    raw_scan["pickle_files_found"], raw_scan["pickle_offsets"]
+                ):
+                    pickle_data = data[offset:]
+                    pickle_findings = scan_pickle(pickle_data, filepath)
+
+                    # Add metadata to pickle findings
+                    for pf in pickle_findings:
+                        if pf.details is None:
+                            pf.details = {}
+                        pf.details["source"] = "zip_raw_extraction"
+                        pf.details["base_offset"] = offset
+                        pf.details["filename"] = fname
+                        if raw_scan["has_zeroed_crc"] and fname in raw_scan.get("zeroed_crc_files", []):
+                            pf.details["zeroed_crc"] = True
+                            pf.details["cve"] = "CVE-2025-10156"
+                    findings.extend(pickle_findings)
+            except OSError:
+                pass
+
         # Check for trailing data (CVE-2025-1889 bypass)
         trailing_info = check_zip_trailing_data(filepath)
 
@@ -587,18 +634,8 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
                         },
                     )
                 )
-        else:
-            # Clean ZIP archive
-            findings.append(
-                Finding(
-                    severity=Severity.INFO,
-                    message="ZIP archive scanned - no trailing data detected",
-                    location=None,
-                    details={"format": "zip"},
-                )
-            )
 
-        # Also scan internal pickle files
+        # Also scan internal pickle files (via standard zipfile)
         from tensortrap.scanner.pickle_scanner import scan_pickle_file
 
         internal_findings = scan_pickle_file(filepath)

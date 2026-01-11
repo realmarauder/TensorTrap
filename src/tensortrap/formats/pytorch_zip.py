@@ -101,6 +101,94 @@ def extract_pickle_files(filepath: Path) -> list[tuple[str, bytes]]:
     return pickle_files
 
 
+def scan_zip_raw_for_pickle(filepath: Path) -> dict[str, Any]:
+    """Scan ZIP file raw bytes for pickle content (bypasses CRC check).
+
+    CVE-2025-10156: Attackers zero out CRC values to bypass certain scanners.
+    This function parses ZIP structure manually and extracts file content
+    regardless of CRC validity.
+
+    Args:
+        filepath: Path to ZIP file
+
+    Returns:
+        Dict with scan results
+    """
+    result: dict[str, Any] = {
+        "has_zeroed_crc": False,
+        "zeroed_crc_files": [],
+        "contains_pickle": False,
+        "pickle_files_found": [],
+        "pickle_offsets": [],
+        "raw_extraction_success": False,
+    }
+
+    try:
+        with open(filepath, "rb") as f:
+            data = f.read()
+    except OSError:
+        return result
+
+    if len(data) < 30:
+        return result
+
+    # Parse local file headers manually
+    pos = 0
+    while pos < len(data) - 30:
+        # Look for local file header signature
+        if data[pos : pos + 4] != b"PK\x03\x04":
+            pos += 1
+            continue
+
+        # Parse local file header
+        # Offset 14-17: CRC-32
+        # Offset 18-21: Compressed size
+        # Offset 22-25: Uncompressed size
+        # Offset 26-27: Filename length
+        # Offset 28-29: Extra field length
+
+        crc32 = struct.unpack("<I", data[pos + 14 : pos + 18])[0]
+        compressed_size = struct.unpack("<I", data[pos + 18 : pos + 22])[0]
+        filename_len = struct.unpack("<H", data[pos + 26 : pos + 28])[0]
+        extra_len = struct.unpack("<H", data[pos + 28 : pos + 30])[0]
+
+        # Extract filename
+        filename_start = pos + 30
+        filename_end = filename_start + filename_len
+        if filename_end > len(data):
+            break
+        filename = data[filename_start:filename_end].decode("utf-8", errors="ignore")
+
+        # Detect zeroed CRC
+        if crc32 == 0 and compressed_size > 0:
+            result["has_zeroed_crc"] = True
+            result["zeroed_crc_files"].append(filename)
+
+        # File content starts after header + filename + extra
+        content_start = filename_end + extra_len
+        content_end = content_start + compressed_size
+
+        if content_end > len(data):
+            break
+
+        file_content = data[content_start:content_end]
+        result["raw_extraction_success"] = True
+
+        # Check if content looks like pickle
+        for pickle_sig in PICKLE_SIGNATURES:
+            if file_content.startswith(pickle_sig):
+                if _is_valid_pickle_at(file_content, 0):
+                    result["contains_pickle"] = True
+                    result["pickle_files_found"].append(filename)
+                    result["pickle_offsets"].append(content_start)
+                break
+
+        # Move to next header
+        pos = content_end
+
+    return result
+
+
 def analyze_zip_structure(filepath: Path) -> dict[str, Any]:
     """Analyze the structure of a ZIP archive.
 

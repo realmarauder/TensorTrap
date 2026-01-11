@@ -218,8 +218,13 @@ VIDEO_EXTENSIONS = {
     ".m2ts",
 }
 
+# Document extensions to scan for polyglot attacks
+DOCUMENT_EXTENSIONS = {
+    ".pdf",
+}
+
 # Combined media extensions
-MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS | DOCUMENT_EXTENSIONS
 
 
 def scan_polyglot(filepath: Path) -> list[Finding]:
@@ -250,6 +255,10 @@ def scan_polyglot(filepath: Path) -> list[Finding]:
     if ext in VIDEO_EXTENSIONS:
         findings.extend(_check_archive_in_video(filepath))
         findings.extend(_check_video_metadata(filepath))
+
+    # For PDF files, check for appended data
+    if ext in DOCUMENT_EXTENSIONS:
+        findings.extend(_check_trailing_data(filepath))
 
     # For SVG files, check for embedded scripts
     if ext == ".svg":
@@ -498,7 +507,7 @@ def _check_archive_in_image(filepath: Path) -> list[Finding]:
 
 
 def _check_trailing_data(filepath: Path) -> list[Finding]:
-    """Check for unexpected data after valid image end marker."""
+    """Check for unexpected data after valid image/document end marker."""
     findings: list[Finding] = []
     ext = filepath.suffix.lower()
 
@@ -537,6 +546,18 @@ def _check_trailing_data(filepath: Path) -> list[Finding]:
             gif_end = trailer_pos + 1
             if gif_end < len(data):
                 trailing_data_start = gif_end
+
+    # PDF: ends with %%EOF marker
+    elif ext == ".pdf" and data.startswith(b"%PDF"):
+        eof_pos = data.rfind(b"%%EOF")
+        if eof_pos > 0:
+            # %%EOF is 5 bytes, may be followed by optional newline
+            pdf_end = eof_pos + 5
+            # Skip optional trailing whitespace/newlines after %%EOF
+            while pdf_end < len(data) and data[pdf_end : pdf_end + 1] in (b"\r", b"\n", b" "):
+                pdf_end += 1
+            if pdf_end < len(data):
+                trailing_data_start = pdf_end
 
     if trailing_data_start and (len(data) - trailing_data_start) > 16:
         trailing_size = len(data) - trailing_data_start

@@ -10,6 +10,9 @@ DANGEROUS_MODULES: set[str] = {
     "pty",
     "posix",
     "nt",
+    # Internal subprocess modules (CVE-2025-10157)
+    "_posixsubprocess",
+    "_winapi",
     # Network access
     "socket",
     "urllib",
@@ -43,6 +46,8 @@ DANGEROUS_MODULES: set[str] = {
     "_thread",
     "threading",
     "asyncio",
+    # Package management (CVE-2025-1716)
+    "pip",
 }
 
 # Specific functions that are dangerous regardless of module
@@ -82,6 +87,19 @@ KNOWN_MALICIOUS_CALLS: set[tuple[str, str]] = {
     ("os", "spawnve"),
     ("os", "spawnvp"),
     ("os", "spawnvpe"),
+    # posix is the underlying module on Unix (os.system -> posix.system)
+    ("posix", "system"),
+    ("posix", "popen"),
+    ("posix", "execv"),
+    ("posix", "execve"),
+    ("posix", "spawnv"),
+    ("posix", "spawnve"),
+    ("posix", "fork"),
+    # nt is the underlying module on Windows
+    ("nt", "system"),
+    ("nt", "popen"),
+    ("nt", "spawnv"),
+    ("nt", "spawnve"),
     ("subprocess", "call"),
     ("subprocess", "check_call"),
     ("subprocess", "check_output"),
@@ -94,4 +112,17 @@ KNOWN_MALICIOUS_CALLS: set[tuple[str, str]] = {
     ("urllib.request", "urlopen"),
     ("requests", "get"),
     ("requests", "post"),
+    # CVE-2025-10157: Internal module and asyncio bypasses
+    ("_posixsubprocess", "fork_exec"),
+    ("asyncio.subprocess", "create_subprocess_exec"),
+    ("asyncio.subprocess", "create_subprocess_shell"),
+    ("asyncio", "create_subprocess_exec"),
+    ("asyncio", "create_subprocess_shell"),
+    # CVE-2025-1716: pip bypass
+    ("pip", "main"),
+    ("pip._internal", "main"),
+    ("pip._internal.main", "main"),
+    # multiprocessing can spawn processes
+    ("multiprocessing", "Process"),
+    ("multiprocessing.reduction", "ForkingPickler"),
 }
