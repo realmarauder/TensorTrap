@@ -11,6 +11,18 @@ AI model files can contain executable code. Pickle files in particular can run a
 - 2.1 billion monthly downloads from Hugging Face alone
 - 100+ confirmed malicious models discovered on public repositories
 
+## Platform Support
+
+TensorTrap is cross-platform and runs on all major operating systems:
+
+| Platform | Status | CI Tested |
+|----------|--------|-----------|
+| **Linux** | ✓ Full Support | Ubuntu (Python 3.10-3.12) |
+| **Windows** | ✓ Full Support | Windows Server (Python 3.10-3.12) |
+| **macOS** | ✓ Full Support | macOS (Python 3.10-3.12) |
+
+All core functionality works identically across platforms. TensorTrap uses pure Python with cross-platform libraries (`pathlib`, `struct`, `zipfile`), ensuring consistent behavior everywhere.
+
 ## Installation
 
 ```bash
@@ -308,8 +320,15 @@ TensorTrap focuses on AI model file security. For comprehensive protection of yo
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Quick Setup (Linux)
+### Quick Setup
 
+**All Platforms (TensorTrap only):**
+```bash
+pip install tensortrap
+tensortrap scan ./models/
+```
+
+**Linux (Full Security Stack):**
 ```bash
 # Install TensorTrap
 pip install tensortrap
@@ -326,6 +345,28 @@ tensortrap scan ~/Models ~/Downloads    # AI models + polyglot detection
 yara -r /path/to/rules ~/Downloads      # Pattern matching
 rkhunter --check                        # System integrity
 clamscan -r ~/Downloads                 # General malware
+```
+
+**Windows:**
+```powershell
+# Install TensorTrap
+pip install tensortrap
+
+# Scan models
+tensortrap scan .\models\
+tensortrap scan $env:USERPROFILE\Downloads\*.pt
+```
+
+**macOS:**
+```bash
+# Install TensorTrap
+pip install tensortrap
+
+# Optional: Install YARA via Homebrew
+brew install yara
+
+# Scan models
+tensortrap scan ~/Models ~/Downloads
 ```
 ## Read More at M2Dynamics.us
 [https://m2dynamics.us/2026/01/11/tensortrap/]
