@@ -180,6 +180,7 @@ def scan_pickle_file(filepath: Path) -> list[Finding]:
     """Scan a pickle file for security issues.
 
     Handles both raw pickle files and PyTorch ZIP archives containing pickles.
+    Also detects archive-based bypass techniques (CVE-2025-1889).
 
     Args:
         filepath: Path to pickle file
@@ -190,6 +191,7 @@ def scan_pickle_file(filepath: Path) -> list[Finding]:
     from tensortrap.formats.pytorch_zip import (
         is_7z_archive,
         is_pytorch_zip,
+        scan_7z_for_pickle,
     )
 
     findings = []
@@ -205,6 +207,44 @@ def scan_pickle_file(filepath: Path) -> list[Finding]:
                 details={"format": "7z", "cve": "CVE-2025-1716"},
             )
         )
+
+        # Scan 7z for embedded pickle data
+        scan_result = scan_7z_for_pickle(filepath)
+        if scan_result["contains_pickle"]:
+            offsets = scan_result["pickle_offsets"]
+            protocols = scan_result["pickle_protocols"]
+            findings.append(
+                Finding(
+                    severity=Severity.CRITICAL,
+                    message=f"Pickle data found inside 7z archive at {len(offsets)} location(s)",
+                    location=offsets[0] if offsets else 0,
+                    details={
+                        "technique": "7z_embedded_pickle",
+                        "pickle_offsets": offsets,
+                        "pickle_protocols": protocols,
+                        "cve": "CVE-2025-1889",
+                        "warning": "Malicious pickle hidden inside 7z archive",
+                    },
+                )
+            )
+
+            # Try to scan the pickle content
+            try:
+                with open(filepath, "rb") as f:
+                    data = f.read()
+                # Scan pickle starting from first found offset
+                if offsets:
+                    pickle_data = data[offsets[0] :]
+                    pickle_findings = scan_pickle(pickle_data, filepath)
+                    for pf in pickle_findings:
+                        if pf.details is None:
+                            pf.details = {}
+                        pf.details["source"] = "7z_embedded_pickle"
+                        pf.details["base_offset"] = offsets[0]
+                    findings.extend(pickle_findings)
+            except OSError:
+                pass
+
         return findings
 
     # Check if this is a PyTorch ZIP archive
@@ -232,6 +272,8 @@ def scan_pickle_file(filepath: Path) -> list[Finding]:
 def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
     """Scan a PyTorch ZIP archive for security issues.
 
+    Also checks for trailing data after the ZIP archive (CVE-2025-1889 bypass).
+
     Args:
         filepath: Path to PyTorch .pt/.pth file
 
@@ -240,7 +282,9 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
     """
     from tensortrap.formats.pytorch_zip import (
         analyze_zip_structure,
+        check_zip_trailing_data,
         extract_pickle_files,
+        extract_trailing_pickle,
     )
 
     findings = []
@@ -272,6 +316,59 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
                 },
             )
         )
+
+    # Check for trailing data after ZIP (CVE-2025-1889 style bypass)
+    trailing_info = check_zip_trailing_data(filepath)
+    if trailing_info["has_trailing_data"]:
+        if trailing_info["trailing_contains_pickle"]:
+            findings.append(
+                Finding(
+                    severity=Severity.CRITICAL,
+                    message=(
+                        f"Pickle data appended after ZIP archive at offset "
+                        f"{trailing_info['pickle_offset']} (CVE-2025-1889 bypass)"
+                    ),
+                    location=trailing_info["pickle_offset"],
+                    details={
+                        "technique": "zip_trailing_pickle",
+                        "zip_end_offset": trailing_info["zip_end_offset"],
+                        "trailing_size": trailing_info["trailing_size"],
+                        "pickle_offset": trailing_info["pickle_offset"],
+                        "pickle_protocol": trailing_info["pickle_protocol"],
+                        "cve": "CVE-2025-1889",
+                        "warning": "Archive bypass - malicious pickle hidden after ZIP",
+                    },
+                )
+            )
+
+            # Extract and scan the trailing pickle
+            trailing_pickle = extract_trailing_pickle(filepath)
+            if trailing_pickle:
+                trailing_findings = scan_pickle(trailing_pickle, filepath)
+                for tf in trailing_findings:
+                    if tf.details is None:
+                        tf.details = {}
+                    tf.details["source"] = "zip_trailing_data"
+                    tf.details["base_offset"] = trailing_info["pickle_offset"]
+                findings.extend(trailing_findings)
+        else:
+            # Trailing data but not pickle - still suspicious
+            findings.append(
+                Finding(
+                    severity=Severity.MEDIUM,
+                    message=(
+                        f"Suspicious trailing data after ZIP archive: "
+                        f"{trailing_info['trailing_size']} bytes"
+                    ),
+                    location=trailing_info["zip_end_offset"],
+                    details={
+                        "technique": "zip_trailing_data",
+                        "zip_end_offset": trailing_info["zip_end_offset"],
+                        "trailing_size": trailing_info["trailing_size"],
+                        "warning": "Data appended after archive end",
+                    },
+                )
+            )
 
     # Note that this is a ZIP archive
     findings.append(

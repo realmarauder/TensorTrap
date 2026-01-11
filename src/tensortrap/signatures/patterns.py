@@ -66,6 +66,9 @@ FORMAT_EXTENSIONS: dict[str, str] = {
     ".bin": "pickle",  # Often PyTorch or generic
     ".ckpt": "pickle",  # Checkpoint (legacy SD)
     ".joblib": "pickle",  # Scikit-learn
+    # Archive formats (may contain pickle - CVE-2025-1889)
+    ".zip": "archive",  # ZIP archives may contain pickle or trailing data
+    ".7z": "archive",  # 7z archives may hide pickle (nullifAI bypass)
     # Safetensors
     ".safetensors": "safetensors",
     # GGUF
