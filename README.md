@@ -150,6 +150,53 @@ Reports are saved with timestamps: `tensortrap_report_YYYYMMDD_HHMMSS.{txt,json,
 - **Obfuscation**: Base64, hex encoding, compression, high entropy
 - **PyTorch archives**: Extracts and scans internal pickle files
 
+## Benchmark Results
+
+TensorTrap has been tested against comprehensive malicious sample sets including CVE-based bypass techniques and polyglot attacks.
+
+### Detection Rate Comparison
+
+| Benchmark | TensorTrap | Picklescan |
+|-----------|------------|------------|
+| **Malicious Samples** | 11/11 (100%) | 0/11 (0%) |
+| **Polyglot Attacks** | 9/9 (100%) | 0/9 (0%) |
+| **False Positives** | 0 | 0 |
+
+### Bypass Techniques Detected
+
+| Technique | CVE | TensorTrap | Picklescan |
+|-----------|-----|------------|------------|
+| ZIP trailing data (pickle after EOCD) | CVE-2025-1889 | ✓ | ✗ |
+| 7z embedded pickle (nullifAI) | CVE-2025-1716 | ✓ | ✗ |
+| Magic byte mismatch (PNG header + pickle) | CVE-2025-1889 | ✓ | ✗ |
+| pip.main() bypass | CVE-2025-1716 | ✓ | ✗ |
+| runpy.run_module() bypass | - | ✓ | ✗ |
+| code.InteractiveInterpreter | - | ✓ | ✗ |
+| Double extension (.pkl.png) | - | ✓ | ✗ |
+| JPEG polyglot (pickle in comment) | - | ✓ | ✗ |
+
+### Polyglot Detection by Type
+
+| Type | Description | TensorTrap |
+|------|-------------|------------|
+| **Stack** | Data appended after valid file | 3/3 ✓ |
+| **Parasite** | Data embedded within file | 1/1 ✓ |
+| **Magic Mismatch** | Fake headers hiding pickle | 5/5 ✓ |
+
+### Running Benchmarks
+
+```bash
+# Run main benchmark suite
+python tests/test_benchmark_tensortrap.py --setup
+python tests/test_benchmark_tensortrap.py --run
+
+# Run Mitra polyglot tests
+python tests/test_mitra_polyglot_tests.py --setup
+python tests/test_mitra_polyglot_tests.py --generate
+python tests/test_mitra_polyglot_tests.py --test
+python tests/test_mitra_polyglot_tests.py --report
+```
+
 ## Exit Codes
 
 - `0`: All files safe (no critical/high findings)
