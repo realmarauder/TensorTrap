@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TensorTrap Benchmark Report</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --border-color: #30363d;
+            --success: #3fb950;
+            --danger: #f85149;
+            --warning: #d29922;
+            --info: #58a6ff;
+            --critical: #f85149;
+            --high: #db6d28;
+            --medium: #d29922;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            padding: 2rem 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--success), var(--info));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .score-banner {
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .score-main {
+            font-size: 4rem;
+            font-weight: bold;
+            color: var(--success);
+        }
+
+        .score-label {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .metric-card {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .metric-value.success { color: var(--success); }
+        .metric-value.danger { color: var(--danger); }
+        .metric-value.info { color: var(--info); }
+
+        .metric-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        section {
+            margin-bottom: 2rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            font-size: 0.85rem;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: rgba(63, 185, 80, 0.2);
+            color: var(--success);
+        }
+
+        .badge-danger {
+            background: rgba(248, 81, 73, 0.2);
+            color: var(--danger);
+        }
+
+        .badge-critical {
+            background: rgba(248, 81, 73, 0.2);
+            color: var(--critical);
+        }
+
+        .badge-high {
+            background: rgba(219, 109, 40, 0.2);
+            color: var(--high);
+        }
+
+        .badge-medium {
+            background: rgba(210, 153, 34, 0.2);
+            color: var(--medium);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--success);
+            border-radius: 4px;
+        }
+
+        .cve-link {
+            color: var(--info);
+            text-decoration: none;
+        }
+
+        .cve-link:hover {
+            text-decoration: underline;
+        }
+
+        .detail-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: var(--bg-tertiary);
+            cursor: pointer;
+        }
+
+        .detail-header:hover {
+            background: var(--border-color);
+        }
+
+        .detail-title {
+            font-weight: 600;
+        }
+
+        .detail-content {
+            padding: 1rem;
+            display: none;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .detail-content.open {
+            display: block;
+        }
+
+        .output-box {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 1rem;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover, .filter-btn.active {
+            background: var(--info);
+            border-color: var(--info);
+            color: white;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            border-top: 1px solid var(--border-color);
+            margin-top: 2rem;
+            color: var(--text-secondary);
+        }
+
+        .timestamp {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>TensorTrap Benchmark Report</h1>
+            <p class="subtitle">Comprehensive AI Model Security Scanner Evaluation</p>
+            <p class="timestamp">Generated: January 12, 2026</p>
+        </header>
+
+        <div class="score-banner">
+            <div class="score-main">100%</div>
+            <div class="score-label">Overall Accuracy (43/43 tests passed)</div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value success">34/34</div>
+                    <div class="metric-label">Malicious Detected</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value success">0</div>
+                    <div class="metric-label">False Positives</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value success">0</div>
+                    <div class="metric-label">False Negatives</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value info">11</div>
+                    <div class="metric-label">CVEs Covered</div>
+                </div>
+            </div>
+        </div>
+
+        <section>
+            <h2>Detection by Category</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Score</th>
+                        <th>Progress</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Pickle Bypass</td>
+                        <td>9/9</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td>JFrog Zero-Day</td>
+                        <td>6/6</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td>Polyglot</td>
+                        <td>4/4</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td>GGUF</td>
+                        <td>1/1</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td>ONNX</td>
+                        <td>2/2</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td>YAML</td>
+                        <td>2/2</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td>ComfyUI</td>
+                        <td>2/2</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td>Keras</td>
+                        <td>2/2</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td>Safetensors</td>
+                        <td>3/3</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td>SVG</td>
+                        <td>3/3</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td>Benign (No FP)</td>
+                        <td>9/9</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%"></div></div></td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>CVE Coverage</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>CVE</th>
+                        <th>Description</th>
+                        <th>Detection</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-1716" target="_blank">CVE-2025-1716</a></td>
+                        <td>pip.main() arbitrary package installation bypass</td>
+                        <td>2/2</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-1889" target="_blank">CVE-2025-1889</a></td>
+                        <td>Extension/magic byte mismatch bypass</td>
+                        <td>2/2</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-10155" target="_blank">CVE-2025-10155</a></td>
+                        <td>Internal module bypass (.bin/.pt extensions)</td>
+                        <td>2/2</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-10156" target="_blank">CVE-2025-10156</a></td>
+                        <td>ZIP zeroed CRC bypass</td>
+                        <td>1/1</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-10157" target="_blank">CVE-2025-10157</a></td>
+                        <td>asyncio/multiprocessing/internal module bypass</td>
+                        <td>3/3</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2024-34359" target="_blank">CVE-2024-34359</a></td>
+                        <td>GGUF Jinja template injection (llama-cpp-python)</td>
+                        <td>1/1</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2024-27318" target="_blank">CVE-2024-27318</a></td>
+                        <td>ONNX path traversal in external_data</td>
+                        <td>1/1</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2024-5187" target="_blank">CVE-2024-5187</a></td>
+                        <td>ONNX arbitrary file read via external_data</td>
+                        <td>1/1</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-50460" target="_blank">CVE-2025-50460</a></td>
+                        <td>YAML unsafe deserialization</td>
+                        <td>1/1</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2024-21576" target="_blank">CVE-2024-21576</a></td>
+                        <td>Keras Lambda layer arbitrary code execution</td>
+                        <td>1/1</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                    <tr>
+                        <td><a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2024-21577" target="_blank">CVE-2024-21577</a></td>
+                        <td>Keras embedded pickle execution</td>
+                        <td>1/1</td>
+                        <td><span class="badge badge-success">100%</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>Detailed Test Results</h2>
+
+            <div class="filter-buttons">
+                <button class="filter-btn active" onclick="filterTests('all')">All (43)</button>
+                <button class="filter-btn" onclick="filterTests('malicious')">Malicious (34)</button>
+                <button class="filter-btn" onclick="filterTests('benign')">Benign (9)</button>
+            </div>
+
+            <div id="test-results">
+                <!-- Pickle Bypass Tests -->
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">os_system_basic</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> pickle_bypass/os_system.pkl</p>
+                        <p><strong>Description:</strong> Basic os.system() arbitrary command execution</p>
+                        <p><strong>Category:</strong> pickle_bypass</p>
+                        <div class="output-box">Known malicious call: posix.system
+REDUCE opcode found 1 time(s) (function calls)
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">subprocess_popen</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> pickle_bypass/subprocess.pkl</p>
+                        <p><strong>Description:</strong> subprocess.Popen arbitrary command execution</p>
+                        <p><strong>Category:</strong> pickle_bypass</p>
+                        <div class="output-box">Known malicious call: subprocess.Popen
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">builtins_eval</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> pickle_bypass/eval_exec.pkl</p>
+                        <p><strong>Description:</strong> builtins.eval() code execution</p>
+                        <p><strong>Category:</strong> pickle_bypass</p>
+                        <div class="output-box">Known malicious call: builtins.eval
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">pip_main_bypass (CVE-2025-1716)</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> pickle_bypass/pip_main.pkl</p>
+                        <p><strong>Description:</strong> pip.main() bypass - installs arbitrary packages</p>
+                        <p><strong>CVE:</strong> <a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-1716" target="_blank">CVE-2025-1716</a></p>
+                        <div class="output-box">Dangerous import: pip._interna.main
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">zip_crc_bypass (CVE-2025-10156)</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> jfrog_zeroday/crc_bypass.pt</p>
+                        <p><strong>Description:</strong> PyTorch ZIP with zeroed CRC values</p>
+                        <p><strong>CVE:</strong> <a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-10156" target="_blank">CVE-2025-10156</a></p>
+                        <div class="output-box">Known malicious call: posix.system
+ZIP archive has zeroed CRC values (CVE-2025-10156 bypass): data.pkl
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">asyncio_subprocess_bypass (CVE-2025-10157)</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> jfrog_zeroday/asyncio.pkl</p>
+                        <p><strong>Description:</strong> asyncio.subprocess bypass (often not blacklisted)</p>
+                        <p><strong>CVE:</strong> <a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-10157" target="_blank">CVE-2025-10157</a></p>
+                        <div class="output-box">Known malicious call: asyncio.subprocess.create_subprocess_exec
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">internal_module_bypass (CVE-2025-10157)</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> jfrog_zeroday/internal.pkl</p>
+                        <p><strong>Description:</strong> _posixsubprocess internal module bypass</p>
+                        <p><strong>CVE:</strong> <a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-10157" target="_blank">CVE-2025-10157</a></p>
+                        <div class="output-box">Known malicious call: _posixsubprocess.fork_exec
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">multiprocessing_bypass (CVE-2025-10157)</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> jfrog_zeroday/multiproc.pkl</p>
+                        <p><strong>Description:</strong> multiprocessing.reduction bypass</p>
+                        <p><strong>CVE:</strong> <a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2025-10157" target="_blank">CVE-2025-10157</a></p>
+                        <div class="output-box">Known malicious call: multiprocessing.reduction.ForkingPickler
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">gguf_jinja_injection (CVE-2024-34359)</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> gguf/jinja_inject.gguf</p>
+                        <p><strong>Description:</strong> GGUF with Jinja template injection in chat_template</p>
+                        <p><strong>CVE:</strong> <a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2024-34359" target="_blank">CVE-2024-34359</a></p>
+                        <div class="output-box">Potential Jinja injection in chat template: Jinja expression
+Potential Jinja injection in chat template: __globals__ access
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">onnx_path_traversal (CVE-2024-27318)</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> onnx/path_traversal.onnx</p>
+                        <p><strong>Description:</strong> ONNX with path traversal in external_data</p>
+                        <p><strong>CVE:</strong> <a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2024-27318" target="_blank">CVE-2024-27318</a></p>
+                        <div class="output-box">Path traversal in external data reference (CVE-2024-27318)
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">comfyui_ace_eval (CVE-2024-21577)</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> comfyui/ace_eval.json</p>
+                        <p><strong>Description:</strong> ComfyUI workflow with ACE_ExpressionEval vulnerability</p>
+                        <p><strong>CVE:</strong> <a class="cve-link" href="https://nvd.nist.gov/vuln/detail/CVE-2024-21577" target="_blank">CVE-2024-21577</a></p>
+                        <div class="output-box">Vulnerable node type: ACE_ExpressionEval
+Suspicious pattern in node input: Dynamic import
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="malicious">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">safetensors_pickle_metadata</span>
+                        <span class="badge badge-success">DETECTED</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> safetensors/pickle_meta.safetensors</p>
+                        <p><strong>Description:</strong> Safetensors with pickle in metadata (base64)</p>
+                        <div class="output-box">Base64-encoded pickle in metadata key: custom_data
+Severity: CRITICAL</div>
+                    </div>
+                </div>
+
+                <!-- Benign Tests -->
+                <div class="detail-card" data-type="benign">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">gguf_benign</span>
+                        <span class="badge badge-success">SAFE (No FP)</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> benign/safe.gguf</p>
+                        <p><strong>Description:</strong> Benign GGUF file with safe metadata</p>
+                        <div class="output-box">SAFE - No threats detected</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="benign">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">onnx_benign</span>
+                        <span class="badge badge-success">SAFE (No FP)</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> benign/safe.onnx</p>
+                        <p><strong>Description:</strong> Benign ONNX file</p>
+                        <div class="output-box">SAFE - No threats detected</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="benign">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">yaml_benign</span>
+                        <span class="badge badge-success">SAFE (No FP)</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> benign/safe.yaml</p>
+                        <p><strong>Description:</strong> Benign YAML configuration file</p>
+                        <div class="output-box">SAFE - No threats detected</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="benign">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">comfyui_benign</span>
+                        <span class="badge badge-success">SAFE (No FP)</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> benign/safe_workflow.json</p>
+                        <p><strong>Description:</strong> Benign ComfyUI workflow</p>
+                        <div class="output-box">SAFE - No threats detected</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="benign">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">keras_benign</span>
+                        <span class="badge badge-success">SAFE (No FP)</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> benign/safe.h5</p>
+                        <p><strong>Description:</strong> Benign Keras model file</p>
+                        <div class="output-box">SAFE - No threats detected</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="benign">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">safetensors_benign</span>
+                        <span class="badge badge-success">SAFE (No FP)</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> benign/safe.safetensors</p>
+                        <p><strong>Description:</strong> Benign Safetensors file</p>
+                        <div class="output-box">SAFE - No threats detected</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="benign">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">svg_benign</span>
+                        <span class="badge badge-success">SAFE (No FP)</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> benign/safe.svg</p>
+                        <p><strong>Description:</strong> Benign SVG image</p>
+                        <div class="output-box">SAFE - No threats detected</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="benign">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">pickle_benign</span>
+                        <span class="badge badge-success">SAFE (No FP)</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> benign/benign.pkl</p>
+                        <p><strong>Description:</strong> Benign pickle with model weights</p>
+                        <div class="output-box">SAFE - No threats detected</div>
+                    </div>
+                </div>
+
+                <div class="detail-card" data-type="benign">
+                    <div class="detail-header" onclick="toggleDetail(this)">
+                        <span class="detail-title">pytorch_benign</span>
+                        <span class="badge badge-success">SAFE (No FP)</span>
+                    </div>
+                    <div class="detail-content">
+                        <p><strong>File:</strong> benign/benign.pt</p>
+                        <p><strong>Description:</strong> Benign PyTorch ZIP archive</p>
+                        <div class="output-box">SAFE - No threats detected</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            <p>TensorTrap v1.0 - AI Model Security Scanner</p>
+            <p>Cross-platform: Linux, Windows, macOS | Python 3.10+</p>
+        </footer>
+    </div>
+
+    <script>
+        function toggleDetail(header) {
+            const content = header.nextElementSibling;
+            content.classList.toggle('open');
+        }
+
+        function filterTests(type) {
+            const cards = document.querySelectorAll('.detail-card');
+            const buttons = document.querySelectorAll('.filter-btn');
+
+            buttons.forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            cards.forEach(card => {
+                if (type === 'all') {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = card.dataset.type === type ? 'block' : 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
