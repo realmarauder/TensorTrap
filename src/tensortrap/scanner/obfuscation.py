@@ -6,6 +6,10 @@ Detects attempts to hide malicious payloads through:
 - String manipulation
 - High entropy regions
 - Unusual byte patterns
+
+Performance optimizations (v1.1.0):
+- All regex patterns precompiled at module load
+- Reduced redundant pattern matching
 """
 
 import base64
@@ -15,6 +19,14 @@ import zlib
 from dataclasses import dataclass
 
 from tensortrap.scanner.results import Finding, Severity
+
+
+# Precompiled regex patterns for performance
+_BASE64_PATTERN = re.compile(rb"[A-Za-z0-9+/]{20,}={0,2}")
+_HEX_PATTERN = re.compile(rb"[0-9a-fA-F]{40,}")
+_HEX_ESCAPE_PATTERN = re.compile(rb"(\\x[0-9a-fA-F]{2}){10,}")
+_UNICODE_ESCAPE_PATTERN = re.compile(rb"(\\u[0-9a-fA-F]{4}){5,}")
+_OCTAL_ESCAPE_PATTERN = re.compile(rb"(\\[0-7]{3}){10,}")
 
 
 @dataclass
@@ -71,12 +83,8 @@ def detect_base64(data: bytes) -> list[dict]:
     """
     regions = []
 
-    # Look for base64 patterns
-    # Base64 uses A-Za-z0-9+/= characters
-    # Minimum length for meaningful base64 is ~20 chars
-    b64_pattern = rb"[A-Za-z0-9+/]{20,}={0,2}"
-
-    for match in re.finditer(b64_pattern, data):
+    # Use precompiled pattern for performance
+    for match in _BASE64_PATTERN.finditer(data):
         candidate = match.group(0)
 
         # Try to decode
@@ -191,10 +199,8 @@ def detect_hex_strings(data: bytes) -> list[dict]:
     """
     regions = []
 
-    # Look for hex strings (40+ chars of 0-9a-fA-F)
-    hex_pattern = rb"[0-9a-fA-F]{40,}"
-
-    for match in re.finditer(hex_pattern, data):
+    # Use precompiled pattern for performance
+    for match in _HEX_PATTERN.finditer(data):
         candidate = match.group(0)
 
         # Try to decode as hex
@@ -233,15 +239,15 @@ def detect_unicode_escape(data: bytes) -> list[dict]:
     """
     regions = []
 
-    # Look for unicode escapes like \x00, \u0000, etc.
+    # Use precompiled patterns for performance
     escape_patterns = [
-        (rb"(\\x[0-9a-fA-F]{2}){10,}", "hex_escape"),
-        (rb"(\\u[0-9a-fA-F]{4}){5,}", "unicode_escape"),
-        (rb"(\\[0-7]{3}){10,}", "octal_escape"),
+        (_HEX_ESCAPE_PATTERN, "hex_escape"),
+        (_UNICODE_ESCAPE_PATTERN, "unicode_escape"),
+        (_OCTAL_ESCAPE_PATTERN, "octal_escape"),
     ]
 
     for pattern, escape_type in escape_patterns:
-        for match in re.finditer(pattern, data):
+        for match in pattern.finditer(data):
             regions.append(
                 {
                     "type": escape_type,

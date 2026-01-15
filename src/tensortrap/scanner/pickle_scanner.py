@@ -1,6 +1,11 @@
 """Pickle file security scanner.
 
 Analyzes pickle bytecode to detect potentially malicious code execution.
+
+Performance optimizations (v1.1.0):
+- Early termination after finding imports (don't parse tensor data)
+- Don't count all REDUCE opcodes - just detect presence
+- Avoid double-scanning same pickle data in archives
 """
 
 from pathlib import Path
@@ -129,15 +134,24 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
                 )
             )
 
-    # Check for code execution opcodes
-    dangerous_ops = get_dangerous_opcodes(data)
+    # Check for code execution opcodes using streaming parser
+    # This scans ALL opcodes while skipping binary data for performance
+    dangerous_ops = get_dangerous_opcodes(data, full_scan=False)
 
-    reduce_count = 0
+    # For performance, we don't count all REDUCE opcodes - just detect their presence
+    # The count doesn't matter for security - what matters is dangerous imports + execution
+    has_reduce = False
+    has_other_dangerous = False
+    unknown_opcodes: list[tuple[int, str]] = []
+
     for op in dangerous_ops:
         if op.name == "REDUCE":
-            reduce_count += 1
+            has_reduce = True
+        elif op.name == "UNKNOWN":
+            # Track unknown opcodes - potential evasion technique
+            unknown_opcodes.append((op.pos, op.arg or ""))
         elif op.name in ("INST", "OBJ", "NEWOBJ", "NEWOBJ_EX"):
-            # Object creation - suspicious but context-dependent
+            has_other_dangerous = True
             findings.append(
                 Finding(
                     severity=Severity.MEDIUM,
@@ -147,7 +161,7 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
                 )
             )
         elif op.name == "BUILD":
-            # BUILD can trigger __setstate__ which may execute code
+            has_other_dangerous = True
             findings.append(
                 Finding(
                     severity=Severity.MEDIUM,
@@ -157,6 +171,22 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
                 )
             )
 
+    # Report unknown opcodes (potential evasion technique)
+    if unknown_opcodes:
+        findings.append(
+            Finding(
+                severity=Severity.HIGH,
+                message=f"Unknown pickle opcodes found ({len(unknown_opcodes)} occurrences)",
+                location=unknown_opcodes[0][0],
+                details={
+                    "opcode": "UNKNOWN",
+                    "unknown_count": len(unknown_opcodes),
+                    "first_unknown": unknown_opcodes[0][1],
+                    "warning": "Unknown opcodes may indicate evasion attempt or newer pickle version",
+                },
+            )
+        )
+
     # Report REDUCE opcodes (function calls)
     # Only flag as high severity if we also found dangerous imports
     has_dangerous_imports = any(
@@ -164,14 +194,14 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
         for f in findings
     )
 
-    if reduce_count > 0:
+    if has_reduce:
         severity = Severity.HIGH if has_dangerous_imports else Severity.MEDIUM
         findings.append(
             Finding(
                 severity=severity,
-                message=f"REDUCE opcode found {reduce_count} time(s) (function calls)",
+                message="REDUCE opcode found (function calls present)",
                 location=None,
-                details={"opcode": "REDUCE", "count": reduce_count},
+                details={"opcode": "REDUCE", "has_reduce": True},
             )
         )
 
@@ -190,7 +220,7 @@ def scan_pickle(data: bytes, filepath: Path | None = None) -> list[Finding]:
     return findings
 
 
-def scan_pickle_file(filepath: Path) -> list[Finding]:
+def scan_pickle_file(filepath: Path, data: bytes | None = None) -> list[Finding]:
     """Scan a pickle file for security issues.
 
     Handles both raw pickle files and PyTorch ZIP archives containing pickles.
@@ -198,21 +228,33 @@ def scan_pickle_file(filepath: Path) -> list[Finding]:
 
     Args:
         filepath: Path to pickle file
+        data: Optional pre-loaded file data (avoids re-reading)
 
     Returns:
         List of security findings
     """
-    from tensortrap.formats.pytorch_zip import (
-        is_7z_archive,
-        is_pytorch_zip,
-        scan_7z_for_pickle,
-    )
+    from tensortrap.formats.pytorch_zip import scan_7z_for_pickle
 
     findings = []
     filepath = Path(filepath)
 
+    # Read file data once if not provided
+    if data is None:
+        try:
+            with open(filepath, "rb") as f:
+                data = f.read()
+        except OSError as e:
+            return [
+                Finding(
+                    severity=Severity.MEDIUM,
+                    message=f"Failed to read file: {e}",
+                    location=None,
+                    details={"error": str(e)},
+                )
+            ]
+
     # Check for 7z archive (nullifAI bypass - CVE-2025-1716)
-    if is_7z_archive(filepath):
+    if data.startswith(b"7z\xbc\xaf\x27\x1c"):
         findings.append(
             Finding(
                 severity=Severity.HIGH,
@@ -222,8 +264,8 @@ def scan_pickle_file(filepath: Path) -> list[Finding]:
             )
         )
 
-        # Scan 7z for embedded pickle data
-        scan_result = scan_7z_for_pickle(filepath)
+        # Scan 7z for embedded pickle data (pass data to avoid re-read)
+        scan_result = scan_7z_for_pickle(filepath, data=data)
         if scan_result["contains_pickle"]:
             offsets = scan_result["pickle_offsets"]
             protocols = scan_result["pickle_protocols"]
@@ -242,55 +284,40 @@ def scan_pickle_file(filepath: Path) -> list[Finding]:
                 )
             )
 
-            # Try to scan the pickle content
-            try:
-                with open(filepath, "rb") as f:
-                    data = f.read()
-                # Scan pickle starting from first found offset
-                if offsets:
-                    pickle_data = data[offsets[0] :]
-                    pickle_findings = scan_pickle(pickle_data, filepath)
-                    for pf in pickle_findings:
-                        if pf.details is None:
-                            pf.details = {}
-                        pf.details["source"] = "7z_embedded_pickle"
-                        pf.details["base_offset"] = offsets[0]
-                    findings.extend(pickle_findings)
-            except OSError:
-                pass
+            # Scan pickle starting from first found offset
+            if offsets:
+                pickle_data = data[offsets[0] :]
+                pickle_findings = scan_pickle(pickle_data, filepath)
+                for pf in pickle_findings:
+                    if pf.details is None:
+                        pf.details = {}
+                    pf.details["source"] = "7z_embedded_pickle"
+                    pf.details["base_offset"] = offsets[0]
+                findings.extend(pickle_findings)
 
         return findings
 
     # Check if this is a PyTorch ZIP archive
-    if is_pytorch_zip(filepath):
-        findings.extend(_scan_pytorch_archive(filepath))
+    if data.startswith(b"PK\x03\x04") or data.startswith(b"PK\x05\x06"):
+        findings.extend(_scan_pytorch_archive(filepath, data=data))
         return findings
 
     # Handle raw pickle file
-    try:
-        with open(filepath, "rb") as f:
-            data = f.read()
-    except OSError as e:
-        return [
-            Finding(
-                severity=Severity.MEDIUM,
-                message=f"Failed to read file: {e}",
-                location=None,
-                details={"error": str(e)},
-            )
-        ]
-
     return scan_pickle(data, filepath)
 
 
-def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
+def _scan_pytorch_archive(filepath: Path, data: bytes | None = None) -> list[Finding]:
     """Scan a PyTorch ZIP archive for security issues.
 
     Also checks for trailing data after the ZIP archive (CVE-2025-1889 bypass)
     and zeroed CRC attacks (CVE-2025-10156 bypass).
 
+    Performance optimization: Only scan each pickle file once, using raw
+    extraction which is faster than zipfile.ZipFile for large archives.
+
     Args:
         filepath: Path to PyTorch .pt/.pth file
+        data: Optional pre-loaded file data (avoids re-reading)
 
     Returns:
         List of findings from internal pickle files
@@ -298,16 +325,31 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
     from tensortrap.formats.pytorch_zip import (
         analyze_zip_structure,
         check_zip_trailing_data,
-        extract_pickle_files,
-        extract_trailing_pickle,
         scan_zip_raw_for_pickle,
     )
 
     findings = []
+    scanned_files: set[str] = set()  # Track which files we've scanned
+
+    # Use provided data or read file once
+    if data is None:
+        try:
+            with open(filepath, "rb") as f:
+                data = f.read()
+        except OSError as e:
+            return [
+                Finding(
+                    severity=Severity.MEDIUM,
+                    message=f"Failed to read file: {e}",
+                    location=None,
+                    details={"error": str(e)},
+                )
+            ]
+    file_data = data
 
     # CVE-2025-10156: Scan raw ZIP structure for zeroed CRCs
-    # This bypasses zipfile.ZipFile which may fail on corrupted CRCs
-    raw_scan = scan_zip_raw_for_pickle(filepath)
+    # This is faster than zipfile.ZipFile and works with corrupted CRCs
+    raw_scan = scan_zip_raw_for_pickle(filepath, data=file_data)
 
     if raw_scan["has_zeroed_crc"]:
         findings.append(
@@ -327,30 +369,29 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
             )
         )
 
+    # Scan pickle files found via raw extraction (faster, single pass)
     if raw_scan["contains_pickle"]:
-        # Scan the pickle content from raw offsets to check if actually malicious
-        try:
-            with open(filepath, "rb") as f:
-                data = f.read()
-            for fname, offset in zip(raw_scan["pickle_files_found"], raw_scan["pickle_offsets"]):
-                pickle_data = data[offset:]
-                pickle_findings = scan_pickle(pickle_data, filepath)
+        for fname, offset in zip(raw_scan["pickle_files_found"], raw_scan["pickle_offsets"]):
+            # SECURITY FIX: Pass full data from offset, not just first 10MB
+            # The streaming parser efficiently skips binary data but must see
+            # all opcodes to detect malicious code hidden after large data blocks
+            pickle_data = file_data[offset:]
+            pickle_findings = scan_pickle(pickle_data, filepath)
 
-                # Add metadata to pickle findings
-                for pf in pickle_findings:
-                    if pf.details is None:
-                        pf.details = {}
-                    pf.details["source"] = "zip_raw_extraction"
-                    pf.details["base_offset"] = offset
-                    pf.details["filename"] = fname
-                    if raw_scan["has_zeroed_crc"] and fname in raw_scan.get("zeroed_crc_files", []):
-                        pf.details["zeroed_crc"] = True
-                        pf.details["cve"] = "CVE-2025-10156"
-                findings.extend(pickle_findings)
-        except OSError:
-            pass
+            # Add metadata to pickle findings
+            for pf in pickle_findings:
+                if pf.details is None:
+                    pf.details = {}
+                pf.details["source"] = "zip_raw_extraction"
+                pf.details["base_offset"] = offset
+                pf.details["filename"] = fname
+                if raw_scan["has_zeroed_crc"] and fname in raw_scan.get("zeroed_crc_files", []):
+                    pf.details["zeroed_crc"] = True
+                    pf.details["cve"] = "CVE-2025-10156"
+            findings.extend(pickle_findings)
+            scanned_files.add(fname)
 
-    # Analyze ZIP structure (may fail with zeroed CRCs, but try anyway)
+    # Analyze ZIP structure for metadata (quick operation)
     zip_info = analyze_zip_structure(filepath)
 
     if not zip_info["is_valid_zip"]:
@@ -379,7 +420,7 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
         )
 
     # Check for trailing data after ZIP (CVE-2025-1889 style bypass)
-    trailing_info = check_zip_trailing_data(filepath)
+    trailing_info = check_zip_trailing_data(filepath, data=file_data)
     if trailing_info["has_trailing_data"]:
         if trailing_info["trailing_contains_pickle"]:
             findings.append(
@@ -402,9 +443,11 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
                 )
             )
 
-            # Extract and scan the trailing pickle
-            trailing_pickle = extract_trailing_pickle(filepath)
-            if trailing_pickle:
+            # Extract and scan the trailing pickle from file_data directly
+            # SECURITY FIX: Don't truncate - streaming parser handles large data efficiently
+            pickle_offset = trailing_info["pickle_offset"]
+            if pickle_offset is not None and pickle_offset < len(file_data):
+                trailing_pickle = file_data[pickle_offset:]
                 trailing_findings = scan_pickle(trailing_pickle, filepath)
                 for tf in trailing_findings:
                     if tf.details is None:
@@ -444,19 +487,47 @@ def _scan_pytorch_archive(filepath: Path) -> list[Finding]:
         )
     )
 
-    # Extract and scan internal pickle files
-    pickle_files = extract_pickle_files(filepath)
+    # SECURITY FIX: Also scan via Central Directory to catch files that may differ
+    # from Local Headers (CVE-style attack where CD points to different content)
+    # Only scan files NOT already covered by raw extraction to avoid double-scanning
+    from tensortrap.formats.pytorch_zip import extract_pickle_files
 
-    for name, data in pickle_files:
-        internal_findings = scan_pickle(data, filepath)
+    try:
+        cd_pickle_files = extract_pickle_files(filepath)
+        for fname, pickle_data in cd_pickle_files:
+            # Skip if already scanned via raw extraction
+            if fname in scanned_files:
+                continue
 
-        # Add context about which internal file
-        for finding in internal_findings:
-            if finding.details is None:
-                finding.details = {}
-            finding.details["internal_file"] = name
-            finding.details["archive"] = str(filepath)
+            # This file was only visible via Central Directory
+            # This is NORMAL for compressed ZIP files (raw scan only finds uncompressed)
+            # Only flag as suspicious if raw scan found OTHER pickle files (suggesting evasion)
+            if raw_scan["contains_pickle"]:
+                # Raw scan found some pickles but not this one - suspicious
+                findings.append(
+                    Finding(
+                        severity=Severity.HIGH,
+                        message=f"Pickle file found only in Central Directory: {fname}",
+                        location=None,
+                        details={
+                            "technique": "cd_only_file",
+                            "filename": fname,
+                            "warning": "File not in Local Headers but others were - possible evasion",
+                        },
+                    )
+                )
+            # else: Normal - ZIP is compressed, raw scan couldn't see pickle signatures
 
-        findings.extend(internal_findings)
+            pickle_findings = scan_pickle(pickle_data, filepath)
+            for pf in pickle_findings:
+                if pf.details is None:
+                    pf.details = {}
+                pf.details["source"] = "central_directory_extraction"
+                pf.details["filename"] = fname
+            findings.extend(pickle_findings)
+            scanned_files.add(fname)
+    except Exception:
+        # If Central Directory extraction fails, continue with what we have
+        pass
 
     return findings
