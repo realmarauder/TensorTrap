@@ -1,13 +1,16 @@
 """Main scanning engine that orchestrates format-specific scanners.
 
-Enhanced with multi-tier context analysis (v0.3.0):
-- Tier 2: Context Analysis (entropy, AI metadata, structure validation)
-- Tier 3: External Validation (exiftool, binwalk - optional)
+Features:
+- Streaming pickle parser (skips binary data, scans all control opcodes)
+- Context analysis (entropy, AI metadata, structure validation)
+- External validation (exiftool, binwalk - optional)
+- Hash computation (disabled by default for performance)
 """
 
 import hashlib
 import time
 from collections.abc import Callable, Generator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,10 +20,10 @@ from tensortrap.scanner.gguf_scanner import scan_gguf
 from tensortrap.scanner.keras_scanner import scan_keras_file
 from tensortrap.scanner.obfuscation import scan_for_obfuscation
 from tensortrap.scanner.onnx_scanner import scan_onnx_file
-from tensortrap.scanner.pickle_scanner import scan_pickle_file
+from tensortrap.scanner.pickle_scanner import scan_pickle_file, scan_pickle
 from tensortrap.scanner.polyglot_scanner import (
-    scan_polyglot,
-    scan_polyglot_with_context,
+    scan_polyglot_from_bytes,
+    scan_polyglot_with_context_from_bytes,
 )
 from tensortrap.scanner.recommendations import add_recommendations
 from tensortrap.scanner.results import Finding, ScanResult, Severity
@@ -29,9 +32,56 @@ from tensortrap.scanner.yaml_scanner import scan_yaml_file
 from tensortrap.signatures.patterns import FORMAT_EXTENSIONS, detect_format
 
 
+# Chunk size for hash computation
+CHUNK_SIZE = 64 * 1024  # 64KB chunks for hashing
+
+
+@dataclass
+class ScanOptions:
+    """Configuration options for scanning."""
+    compute_hash: bool = False  # Disabled by default for performance
+    use_context_analysis: bool = True
+    use_external_validation: bool = False
+    confidence_threshold: float = 0.5
+    entropy_threshold: float = 7.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "compute_hash": self.compute_hash,
+            "use_context_analysis": self.use_context_analysis,
+            "use_external_validation": self.use_external_validation,
+            "confidence_threshold": self.confidence_threshold,
+            "entropy_threshold": self.entropy_threshold,
+        }
+
+
+class FileDataCache:
+    """Simple cache for file data to avoid multiple reads within a scan."""
+
+    def __init__(self, filepath: Path):
+        self.filepath = filepath
+        self._data: bytes | None = None
+
+    def get_data(self) -> bytes:
+        """Get file data, caching on first read."""
+        if self._data is None:
+            with open(self.filepath, "rb") as f:
+                self._data = f.read()
+        return self._data
+
+    def get_chunk(self, start: int, size: int) -> bytes:
+        """Get a chunk of file data."""
+        data = self.get_data()
+        return data[start:start + size]
+
+    def close(self):
+        """Release cached data."""
+        self._data = None
+
+
 def scan_file(
     filepath: Path,
-    compute_hash: bool = True,
+    compute_hash: bool = False,
     use_context_analysis: bool = True,
     use_external_validation: bool = False,
     confidence_threshold: float = 0.5,
@@ -41,7 +91,7 @@ def scan_file(
 
     Args:
         filepath: Path to file to scan
-        compute_hash: Whether to compute SHA-256 hash
+        compute_hash: Whether to compute SHA-256 hash (default: False for performance)
         use_context_analysis: Whether to run context analysis on findings
         use_external_validation: Whether to run external tool validation
         confidence_threshold: Minimum confidence to report as actionable
@@ -53,13 +103,14 @@ def scan_file(
     filepath = Path(filepath)
     start_time = time.perf_counter()
 
-    # Build scan options for internal use
-    scan_options: dict[str, Any] = {
-        "use_context_analysis": use_context_analysis,
-        "use_external_validation": use_external_validation,
-        "confidence_threshold": confidence_threshold,
-        "entropy_threshold": entropy_threshold,
-    }
+    # Build scan options
+    options = ScanOptions(
+        compute_hash=compute_hash,
+        use_context_analysis=use_context_analysis,
+        use_external_validation=use_external_validation,
+        confidence_threshold=confidence_threshold,
+        entropy_threshold=entropy_threshold,
+    )
 
     # Check file exists
     if not filepath.exists():
@@ -107,17 +158,24 @@ def scan_file(
     # Detect format
     file_format = detect_format(filepath)
 
-    # Compute hash if requested
-    file_hash = ""
-    if compute_hash:
-        file_hash = _compute_sha256(filepath)
+    # Initialize file data cache
+    cache = FileDataCache(filepath)
 
-    # Run appropriate scanner
-    findings = _scan_by_format(filepath, file_format, scan_options)
+    try:
+        # Compute hash if requested (using chunked reading)
+        file_hash = ""
+        if compute_hash:
+            file_hash = _compute_sha256_chunked(filepath)
 
-    # Run external validation if enabled
-    if use_external_validation and findings:
-        findings = _apply_external_validation(filepath, findings)
+        # Run appropriate scanner with cached data
+        findings = _scan_by_format_optimized(filepath, file_format, options, cache)
+
+        # Run external validation if enabled
+        if use_external_validation and findings:
+            findings = _apply_external_validation(filepath, findings)
+
+    finally:
+        cache.close()
 
     # Calculate scan time
     scan_time_ms = (time.perf_counter() - start_time) * 1000
@@ -130,6 +188,97 @@ def scan_file(
         file_size=file_size,
         file_hash=file_hash,
     )
+
+
+def _scan_by_format_optimized(
+    filepath: Path,
+    file_format: str,
+    options: ScanOptions,
+    cache: FileDataCache,
+) -> list[Finding]:
+    """Run the appropriate scanner for a file format.
+
+    Args:
+        filepath: Path to file
+        file_format: Detected format
+        options: Scan options
+        cache: File data cache
+
+    Returns:
+        List of findings
+    """
+    findings: list[Finding] = []
+    use_context = options.use_context_analysis
+    entropy_threshold = options.entropy_threshold
+
+    # Format-specific scanning
+    if file_format == "pickle":
+        findings.extend(scan_pickle_file(filepath, data=cache.get_data()))
+    elif file_format == "archive":
+        findings.extend(_scan_archive_format(filepath, cache=cache))
+    elif file_format == "safetensors":
+        findings.extend(scan_safetensors(filepath))
+    elif file_format == "gguf":
+        findings.extend(scan_gguf(filepath))
+    elif file_format == "onnx":
+        findings.extend(scan_onnx_file(filepath))
+    elif file_format == "keras":
+        findings.extend(scan_keras_file(filepath))
+    elif file_format == "yaml":
+        findings.extend(scan_yaml_file(filepath))
+    elif file_format == "json":
+        findings.extend(scan_comfyui_workflow(filepath))
+    elif file_format in ("image", "video", "svg"):
+        # Media files - run polyglot scanner (can hide malicious content)
+        file_data = cache.get_data()
+        if use_context:
+            findings.extend(
+                scan_polyglot_with_context_from_bytes(
+                    file_data,
+                    filepath,
+                    use_context_analysis=True,
+                    entropy_threshold=entropy_threshold,
+                )
+            )
+        else:
+            findings.extend(scan_polyglot_from_bytes(file_data, filepath))
+    elif file_format == "unknown":
+        findings.extend(_scan_unknown_format(filepath, cache=cache))
+    else:
+        findings.append(
+            Finding(
+                severity=Severity.INFO,
+                message=f"Unknown format: {file_format}",
+                location=None,
+            )
+        )
+
+    # Defense-in-depth: Run polyglot detection on ALL files
+    # This catches disguised files regardless of extension
+    if file_format not in ("image", "video", "svg"):
+        file_data = cache.get_data()
+        if use_context:
+            polyglot_findings = scan_polyglot_with_context_from_bytes(
+                file_data,
+                filepath,
+                use_context_analysis=True,
+                entropy_threshold=entropy_threshold,
+            )
+        else:
+            polyglot_findings = scan_polyglot_from_bytes(file_data, filepath)
+        findings.extend(polyglot_findings)
+
+    # Run obfuscation detection on high-risk formats
+    if file_format in ("pickle", "onnx", "keras", "unknown"):
+        file_data = cache.get_data()
+        # Only scan first 1MB for obfuscation (performance)
+        obfuscation_findings = scan_for_obfuscation(file_data[:1024 * 1024])
+        findings.extend(obfuscation_findings)
+
+    # Add remediation recommendations to all findings
+    add_recommendations(findings)
+
+    return findings
 
 
 def collect_files(
@@ -170,7 +319,7 @@ def collect_files(
 
 def scan_files_with_progress(
     files: list[Path],
-    compute_hash: bool = True,
+    compute_hash: bool = False,
     progress_callback: Callable[[Path, int, int], None] | None = None,
     use_context_analysis: bool = True,
     use_external_validation: bool = False,
@@ -209,7 +358,7 @@ def scan_directory(
     dirpath: Path,
     recursive: bool = True,
     extensions: set[str] | None = None,
-    compute_hash: bool = True,
+    compute_hash: bool = False,
 ) -> list[ScanResult]:
     """Scan all model files in a directory.
 
@@ -259,98 +408,7 @@ def scan_directory(
     return list(scan_files_with_progress(files, compute_hash=compute_hash))
 
 
-def _scan_by_format(
-    filepath: Path,
-    file_format: str,
-    scan_options: dict[str, Any] | None = None,
-) -> list[Finding]:
-    """Run the appropriate scanner for a file format.
-
-    Args:
-        filepath: Path to file
-        file_format: Detected format
-        scan_options: Context analysis options
-
-    Returns:
-        List of findings
-    """
-    findings: list[Finding] = []
-    options = scan_options or {}
-    use_context = options.get("use_context_analysis", True)
-    entropy_threshold = options.get("entropy_threshold", 7.0)
-
-    if file_format == "pickle":
-        findings.extend(scan_pickle_file(filepath))
-    elif file_format == "archive":
-        # Archive format - scan for embedded pickle (CVE-2025-1889)
-        findings.extend(_scan_archive_format(filepath))
-    elif file_format == "safetensors":
-        findings.extend(scan_safetensors(filepath))
-    elif file_format == "gguf":
-        findings.extend(scan_gguf(filepath))
-    elif file_format == "onnx":
-        findings.extend(scan_onnx_file(filepath))
-    elif file_format == "keras":
-        findings.extend(scan_keras_file(filepath))
-    elif file_format == "yaml":
-        findings.extend(scan_yaml_file(filepath))
-    elif file_format == "json":
-        # JSON files might be ComfyUI workflows
-        findings.extend(scan_comfyui_workflow(filepath))
-    elif file_format in ("image", "video", "svg"):
-        # Media files - run polyglot scanner with context analysis
-        if use_context:
-            findings.extend(
-                scan_polyglot_with_context(
-                    filepath,
-                    use_context_analysis=True,
-                    entropy_threshold=entropy_threshold,
-                )
-            )
-        else:
-            findings.extend(scan_polyglot(filepath))
-    elif file_format == "unknown":
-        # Try to detect format from file contents
-        findings.extend(_scan_unknown_format(filepath))
-    else:
-        findings.append(
-            Finding(
-                severity=Severity.INFO,
-                message=f"Unknown format: {file_format}",
-                location=None,
-            )
-        )
-
-    # Run polyglot detection on ALL files (Defense-in-Depth)
-    # This catches disguised files regardless of extension
-    if file_format not in ("image", "video", "svg"):
-        if use_context:
-            polyglot_findings = scan_polyglot_with_context(
-                filepath,
-                use_context_analysis=True,
-                entropy_threshold=entropy_threshold,
-            )
-        else:
-            polyglot_findings = scan_polyglot(filepath)
-        findings.extend(polyglot_findings)
-
-    # Run obfuscation detection on high-risk formats
-    if file_format in ("pickle", "onnx", "keras", "unknown"):
-        try:
-            with open(filepath, "rb") as f:
-                data = f.read(1024 * 1024)  # Read first 1MB for obfuscation check
-            obfuscation_findings = scan_for_obfuscation(data)
-            findings.extend(obfuscation_findings)
-        except OSError:
-            pass
-
-    # Add remediation recommendations to all findings
-    add_recommendations(findings)
-
-    return findings
-
-
-def _scan_unknown_format(filepath: Path) -> list[Finding]:
+def _scan_unknown_format(filepath: Path, cache: FileDataCache | None = None) -> list[Finding]:
     """Attempt to scan a file with unknown extension by checking magic bytes.
 
     This is critical for detecting CVE-2025-1889 where malicious pickle
@@ -358,6 +416,7 @@ def _scan_unknown_format(filepath: Path) -> list[Finding]:
 
     Args:
         filepath: Path to file
+        cache: Optional file data cache
 
     Returns:
         List of findings
@@ -387,6 +446,9 @@ def _scan_unknown_format(filepath: Path) -> list[Finding]:
             )
             return findings
 
+        # Get cached data if available
+        file_data = cache.get_data() if cache else None
+
         # Route to appropriate scanner based on magic detection
         if detected_format == "pickle" and confidence in ("high", "medium"):
             protocol = details.get("protocol", "unknown")
@@ -399,7 +461,7 @@ def _scan_unknown_format(filepath: Path) -> list[Finding]:
                     details={"detected_by": "magic_bytes", "cve": "CVE-2025-1889"},
                 )
             )
-            findings.extend(scan_pickle_file(filepath))
+            findings.extend(scan_pickle_file(filepath, data=file_data))
             return findings
 
         elif detected_format in ("zip", "pytorch") and confidence in ("high", "medium"):
@@ -411,7 +473,7 @@ def _scan_unknown_format(filepath: Path) -> list[Finding]:
                     location=0,
                 )
             )
-            findings.extend(scan_pickle_file(filepath))
+            findings.extend(scan_pickle_file(filepath, data=file_data))
             return findings
 
         elif detected_format == "gguf" and confidence in ("high", "medium"):
@@ -459,7 +521,7 @@ def _scan_unknown_format(filepath: Path) -> list[Finding]:
     return findings
 
 
-def _scan_archive_format(filepath: Path) -> list[Finding]:
+def _scan_archive_format(filepath: Path, cache: FileDataCache | None = None) -> list[Finding]:
     """Scan archive files (ZIP, 7z) for embedded pickle data.
 
     Handles CVE-2025-1889 style bypass attacks where pickle data
@@ -467,25 +529,32 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
 
     Args:
         filepath: Path to archive file
+        cache: Optional file data cache
 
     Returns:
         List of findings
     """
     from tensortrap.formats.pytorch_zip import (
         check_zip_trailing_data,
-        extract_trailing_pickle,
-        is_7z_archive,
-        is_pytorch_zip,
         scan_7z_for_pickle,
         scan_zip_raw_for_pickle,
     )
-    from tensortrap.scanner.pickle_scanner import scan_pickle
 
     findings: list[Finding] = []
     ext = filepath.suffix.lower()
 
-    # Handle 7z archives
-    if ext == ".7z" or is_7z_archive(filepath):
+    # Get file data once (from cache or read)
+    if cache:
+        file_data = cache.get_data()
+    else:
+        try:
+            with open(filepath, "rb") as f:
+                file_data = f.read()
+        except OSError:
+            return findings
+
+    # Handle 7z archives (check magic bytes directly)
+    if ext == ".7z" or file_data.startswith(b"7z\xbc\xaf\x27\x1c"):
         findings.append(
             Finding(
                 severity=Severity.HIGH,
@@ -495,8 +564,8 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
             )
         )
 
-        # Scan 7z for embedded pickle data
-        scan_result = scan_7z_for_pickle(filepath)
+        # Scan 7z for embedded pickle data (pass data to avoid re-read)
+        scan_result = scan_7z_for_pickle(filepath, data=file_data)
         if scan_result["contains_pickle"]:
             offsets = scan_result["pickle_offsets"]
             protocols = scan_result["pickle_protocols"]
@@ -516,27 +585,22 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
             )
 
             # Scan the pickle content
-            try:
-                with open(filepath, "rb") as f:
-                    data = f.read()
-                if offsets:
-                    pickle_data = data[offsets[0] :]
-                    pickle_findings = scan_pickle(pickle_data, filepath)
-                    for pf in pickle_findings:
-                        if pf.details is None:
-                            pf.details = {}
-                        pf.details["source"] = "7z_embedded_pickle"
-                        pf.details["base_offset"] = offsets[0]
-                    findings.extend(pickle_findings)
-            except OSError:
-                pass
+            if offsets:
+                pickle_data = file_data[offsets[0] :]
+                pickle_findings = scan_pickle(pickle_data, filepath)
+                for pf in pickle_findings:
+                    if pf.details is None:
+                        pf.details = {}
+                    pf.details["source"] = "7z_embedded_pickle"
+                    pf.details["base_offset"] = offsets[0]
+                findings.extend(pickle_findings)
 
         return findings
 
-    # Handle ZIP archives
-    if ext == ".zip" or is_pytorch_zip(filepath):
-        # CVE-2025-10156: Scan raw ZIP structure for zeroed CRCs
-        raw_scan = scan_zip_raw_for_pickle(filepath)
+    # Handle ZIP archives (check magic bytes directly)
+    if ext == ".zip" or file_data.startswith(b"PK\x03\x04") or file_data.startswith(b"PK\x05\x06"):
+        # CVE-2025-10156: Scan raw ZIP structure for zeroed CRCs (pass data)
+        raw_scan = scan_zip_raw_for_pickle(filepath, data=file_data)
 
         if raw_scan["has_zeroed_crc"]:
             findings.append(
@@ -557,34 +621,29 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
             )
 
         if raw_scan["contains_pickle"]:
-            # Scan the pickle content from raw offsets to check if actually malicious
-            try:
-                with open(filepath, "rb") as f:
-                    data = f.read()
-                for fname, offset in zip(
-                    raw_scan["pickle_files_found"], raw_scan["pickle_offsets"]
-                ):
-                    pickle_data = data[offset:]
-                    pickle_findings = scan_pickle(pickle_data, filepath)
+            # Scan the pickle content from raw offsets
+            for fname, offset in zip(
+                raw_scan["pickle_files_found"], raw_scan["pickle_offsets"]
+            ):
+                pickle_data = file_data[offset:]
+                pickle_findings = scan_pickle(pickle_data, filepath)
 
-                    # Add metadata to pickle findings
-                    for pf in pickle_findings:
-                        if pf.details is None:
-                            pf.details = {}
-                        pf.details["source"] = "zip_raw_extraction"
-                        pf.details["base_offset"] = offset
-                        pf.details["filename"] = fname
-                        if raw_scan["has_zeroed_crc"] and fname in raw_scan.get(
-                            "zeroed_crc_files", []
-                        ):
-                            pf.details["zeroed_crc"] = True
-                            pf.details["cve"] = "CVE-2025-10156"
-                    findings.extend(pickle_findings)
-            except OSError:
-                pass
+                # Add metadata to pickle findings
+                for pf in pickle_findings:
+                    if pf.details is None:
+                        pf.details = {}
+                    pf.details["source"] = "zip_raw_extraction"
+                    pf.details["base_offset"] = offset
+                    pf.details["filename"] = fname
+                    if raw_scan["has_zeroed_crc"] and fname in raw_scan.get(
+                        "zeroed_crc_files", []
+                    ):
+                        pf.details["zeroed_crc"] = True
+                        pf.details["cve"] = "CVE-2025-10156"
+                findings.extend(pickle_findings)
 
-        # Check for trailing data (CVE-2025-1889 bypass)
-        trailing_info = check_zip_trailing_data(filepath)
+        # Check for trailing data (CVE-2025-1889 bypass) - pass data
+        trailing_info = check_zip_trailing_data(filepath, data=file_data)
 
         if trailing_info["has_trailing_data"]:
             if trailing_info["trailing_contains_pickle"]:
@@ -608,9 +667,10 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
                     )
                 )
 
-                # Extract and scan the trailing pickle
-                trailing_pickle = extract_trailing_pickle(filepath)
-                if trailing_pickle:
+                # Extract and scan the trailing pickle from file_data directly
+                pickle_offset = trailing_info["pickle_offset"]
+                if pickle_offset is not None and pickle_offset < len(file_data):
+                    trailing_pickle = file_data[pickle_offset:]
                     trailing_findings = scan_pickle(trailing_pickle, filepath)
                     for tf in trailing_findings:
                         if tf.details is None:
@@ -637,10 +697,8 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
                     )
                 )
 
-        # Also scan internal pickle files (via standard zipfile)
-        from tensortrap.scanner.pickle_scanner import scan_pickle_file
-
-        internal_findings = scan_pickle_file(filepath)
+        # Also scan internal pickle files (via standard zipfile) - pass data
+        internal_findings = scan_pickle_file(filepath, data=file_data)
         findings.extend(internal_findings)
 
         return findings
@@ -658,7 +716,7 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
     return findings
 
 
-def _compute_sha256(filepath: Path) -> str:
+def _compute_sha256_chunked(filepath: Path) -> str:
     """Compute SHA-256 hash of a file.
 
     Args:
@@ -670,7 +728,7 @@ def _compute_sha256(filepath: Path) -> str:
     sha256 = hashlib.sha256()
     try:
         with open(filepath, "rb") as f:
-            for chunk in iter(lambda: f.read(65536), b""):
+            for chunk in iter(lambda: f.read(CHUNK_SIZE), b""):
                 sha256.update(chunk)
         return sha256.hexdigest()
     except OSError:

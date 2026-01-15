@@ -111,10 +111,10 @@ class TestExtensionMismatch:
     def test_pickle_disguised_as_png(self, tmp_path):
         """Pickle file with .png extension is detected."""
         filepath = tmp_path / "image.png"
-        # Write pickle bytes with PNG extension
-        filepath.write_bytes(PICKLE_PROTO_4 + b"\x95\x00\x00\x00\x00\x00\x00\x00\x00.")
+        data = PICKLE_PROTO_4 + b"\x95\x00\x00\x00\x00\x00\x00\x00\x00."
+        filepath.write_bytes(data)
 
-        findings = _check_extension_mismatch(filepath)
+        findings = _check_extension_mismatch(data, filepath)
 
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
@@ -124,9 +124,10 @@ class TestExtensionMismatch:
     def test_pickle_disguised_as_jpg(self, tmp_path):
         """Pickle file with .jpg extension is detected."""
         filepath = tmp_path / "photo.jpg"
-        filepath.write_bytes(PICKLE_PROTO_5 + b"\x95\x00\x00\x00\x00\x00\x00\x00\x00.")
+        data = PICKLE_PROTO_5 + b"\x95\x00\x00\x00\x00\x00\x00\x00\x00."
+        filepath.write_bytes(data)
 
-        findings = _check_extension_mismatch(filepath)
+        findings = _check_extension_mismatch(data, filepath)
 
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
@@ -134,9 +135,10 @@ class TestExtensionMismatch:
     def test_zip_disguised_as_image(self, tmp_path):
         """ZIP file with image extension is detected."""
         filepath = tmp_path / "image.png"
-        filepath.write_bytes(ZIP_SIGNATURE + b"\x00" * 26)
+        data = ZIP_SIGNATURE + b"\x00" * 26
+        filepath.write_bytes(data)
 
-        findings = _check_extension_mismatch(filepath)
+        findings = _check_extension_mismatch(data, filepath)
 
         assert len(findings) == 1
         assert findings[0].severity == Severity.HIGH
@@ -147,7 +149,7 @@ class TestExtensionMismatch:
         filepath = tmp_path / "image.png"
         filepath.write_bytes(VALID_PNG_BYTES)
 
-        findings = _check_extension_mismatch(filepath)
+        findings = _check_extension_mismatch(VALID_PNG_BYTES, filepath)
 
         assert len(findings) == 0
 
@@ -156,7 +158,7 @@ class TestExtensionMismatch:
         filepath = tmp_path / "photo.jpg"
         filepath.write_bytes(VALID_JPEG_BYTES)
 
-        findings = _check_extension_mismatch(filepath)
+        findings = _check_extension_mismatch(VALID_JPEG_BYTES, filepath)
 
         assert len(findings) == 0
 
@@ -167,9 +169,10 @@ class TestArchiveInImage:
     def test_zip_appended_to_png(self, tmp_path):
         """ZIP archive appended to PNG is detected."""
         filepath = tmp_path / "image.png"
-        filepath.write_bytes(VALID_PNG_BYTES + ZIP_SIGNATURE + b"\x00" * 26)
+        data = VALID_PNG_BYTES + ZIP_SIGNATURE + b"\x00" * 26
+        filepath.write_bytes(data)
 
-        findings = _check_archive_in_image(filepath)
+        findings = _check_archive_in_image(data, filepath)
 
         assert len(findings) >= 1
         assert any(f.severity == Severity.CRITICAL for f in findings)
@@ -181,9 +184,10 @@ class TestArchiveInImage:
     def test_7z_appended_to_png(self, tmp_path):
         """7z archive appended to PNG is detected (CVE-2025-1716)."""
         filepath = tmp_path / "image.png"
-        filepath.write_bytes(VALID_PNG_BYTES + SEVENZ_SIGNATURE + b"\x00" * 20)
+        data = VALID_PNG_BYTES + SEVENZ_SIGNATURE + b"\x00" * 20
+        filepath.write_bytes(data)
 
-        findings = _check_archive_in_image(filepath)
+        findings = _check_archive_in_image(data, filepath)
 
         assert len(findings) >= 1
         assert any(f.severity == Severity.CRITICAL for f in findings)
@@ -193,11 +197,11 @@ class TestArchiveInImage:
         """Pickle data embedded in image is detected."""
         filepath = tmp_path / "image.png"
         # Protocol 4 pickle with proper FRAME structure and valid opcode after frame
-        # FRAME (0x95) + 8-byte length (20) + EMPTY_DICT (0x7D) as first opcode
         valid_pickle = PICKLE_PROTO_4 + b"\x95\x14\x00\x00\x00\x00\x00\x00\x00}."
-        filepath.write_bytes(VALID_PNG_BYTES + valid_pickle)
+        data = VALID_PNG_BYTES + valid_pickle
+        filepath.write_bytes(data)
 
-        findings = _check_archive_in_image(filepath)
+        findings = _check_archive_in_image(data, filepath)
 
         assert len(findings) >= 1
         assert any(f.severity == Severity.CRITICAL for f in findings)
@@ -208,7 +212,7 @@ class TestArchiveInImage:
         filepath = tmp_path / "clean.png"
         filepath.write_bytes(VALID_PNG_BYTES)
 
-        findings = _check_archive_in_image(filepath)
+        findings = _check_archive_in_image(VALID_PNG_BYTES, filepath)
 
         assert len(findings) == 0
 
@@ -219,10 +223,10 @@ class TestTrailingData:
     def test_trailing_data_after_png(self, tmp_path):
         """Data after PNG IEND chunk is detected."""
         filepath = tmp_path / "image.png"
-        # Add significant trailing data
-        filepath.write_bytes(VALID_PNG_BYTES + b"SUSPICIOUS_TRAILING_DATA_HERE_12345")
+        data = VALID_PNG_BYTES + b"SUSPICIOUS_TRAILING_DATA_HERE_12345"
+        filepath.write_bytes(data)
 
-        findings = _check_trailing_data(filepath)
+        findings = _check_trailing_data(data, filepath)
 
         assert len(findings) >= 1
         assert any("trailing data" in f.message.lower() for f in findings)
@@ -230,9 +234,10 @@ class TestTrailingData:
     def test_trailing_pickle_after_png(self, tmp_path):
         """Pickle data after PNG end is flagged as critical."""
         filepath = tmp_path / "image.png"
-        filepath.write_bytes(VALID_PNG_BYTES + PICKLE_PROTO_4 + b"\x95" + b"\x00" * 20)
+        data = VALID_PNG_BYTES + PICKLE_PROTO_4 + b"\x95" + b"\x00" * 20
+        filepath.write_bytes(data)
 
-        findings = _check_trailing_data(filepath)
+        findings = _check_trailing_data(data, filepath)
 
         # Should detect trailing data with pickle
         assert len(findings) >= 1
@@ -240,9 +245,10 @@ class TestTrailingData:
     def test_trailing_data_after_jpeg(self, tmp_path):
         """Data after JPEG EOI marker is detected."""
         filepath = tmp_path / "photo.jpg"
-        filepath.write_bytes(VALID_JPEG_BYTES + b"SUSPICIOUS_DATA_AFTER_EOI_1234567890")
+        data = VALID_JPEG_BYTES + b"SUSPICIOUS_DATA_AFTER_EOI_1234567890"
+        filepath.write_bytes(data)
 
-        findings = _check_trailing_data(filepath)
+        findings = _check_trailing_data(data, filepath)
 
         assert len(findings) >= 1
         assert any("trailing data" in f.message.lower() for f in findings)
@@ -252,7 +258,7 @@ class TestTrailingData:
         filepath = tmp_path / "clean.jpg"
         filepath.write_bytes(VALID_JPEG_BYTES)
 
-        findings = _check_trailing_data(filepath)
+        findings = _check_trailing_data(VALID_JPEG_BYTES, filepath)
 
         assert len(findings) == 0
 
@@ -263,9 +269,10 @@ class TestSVGScripts:
     def test_svg_with_script_tag(self, tmp_path):
         """SVG with <script> tag is flagged."""
         filepath = tmp_path / "image.svg"
-        filepath.write_text("<svg><script>alert(1)</script></svg>")
+        data = b"<svg><script>alert(1)</script></svg>"
+        filepath.write_bytes(data)
 
-        findings = _check_svg_scripts(filepath)
+        findings = _check_svg_scripts(data)
 
         assert len(findings) >= 1
         assert any(f.severity == Severity.CRITICAL for f in findings)
@@ -274,9 +281,10 @@ class TestSVGScripts:
     def test_svg_with_onclick(self, tmp_path):
         """SVG with onclick handler is flagged."""
         filepath = tmp_path / "image.svg"
-        filepath.write_text('<svg><rect onclick="alert(1)"/></svg>')
+        data = b'<svg><rect onclick="alert(1)"/></svg>'
+        filepath.write_bytes(data)
 
-        findings = _check_svg_scripts(filepath)
+        findings = _check_svg_scripts(data)
 
         assert len(findings) >= 1
         assert any(f.severity == Severity.HIGH for f in findings)
@@ -285,9 +293,10 @@ class TestSVGScripts:
     def test_svg_with_javascript_uri(self, tmp_path):
         """SVG with javascript: URI is flagged."""
         filepath = tmp_path / "image.svg"
-        filepath.write_text('<svg><a xlink:href="javascript:alert(1)">click</a></svg>')
+        data = b'<svg><a xlink:href="javascript:alert(1)">click</a></svg>'
+        filepath.write_bytes(data)
 
-        findings = _check_svg_scripts(filepath)
+        findings = _check_svg_scripts(data)
 
         assert len(findings) >= 1
         assert any(f.severity == Severity.CRITICAL for f in findings)
@@ -295,9 +304,10 @@ class TestSVGScripts:
     def test_svg_with_onload(self, tmp_path):
         """SVG with onload handler is flagged."""
         filepath = tmp_path / "image.svg"
-        filepath.write_text('<svg onload="malicious()"></svg>')
+        data = b'<svg onload="malicious()"></svg>'
+        filepath.write_bytes(data)
 
-        findings = _check_svg_scripts(filepath)
+        findings = _check_svg_scripts(data)
 
         assert len(findings) >= 1
         assert any("event_handler" in str(f.details) for f in findings)
@@ -305,9 +315,10 @@ class TestSVGScripts:
     def test_clean_svg_no_scripts(self, tmp_path):
         """Clean SVG without scripts produces no findings."""
         filepath = tmp_path / "clean.svg"
-        filepath.write_text('<svg><rect x="0" y="0" width="100" height="100" fill="blue"/></svg>')
+        data = b'<svg><rect x="0" y="0" width="100" height="100" fill="blue"/></svg>'
+        filepath.write_bytes(data)
 
-        findings = _check_svg_scripts(filepath)
+        findings = _check_svg_scripts(data)
 
         assert len(findings) == 0
 
@@ -318,11 +329,11 @@ class TestMetadataPayloads:
     def test_php_in_metadata(self, tmp_path):
         """PHP code in image metadata is detected."""
         filepath = tmp_path / "image.jpg"
-        # Create a file with PHP code that would appear in metadata area
         php_payload = b'<?php system($_GET["cmd"]); ?>'
-        filepath.write_bytes(VALID_JPEG_BYTES[:20] + php_payload + VALID_JPEG_BYTES[20:])
+        data = VALID_JPEG_BYTES[:20] + php_payload + VALID_JPEG_BYTES[20:]
+        filepath.write_bytes(data)
 
-        findings = _check_metadata_payloads(filepath)
+        findings = _check_metadata_payloads(data)
 
         assert len(findings) >= 1
         assert any(f.severity == Severity.CRITICAL for f in findings)
@@ -331,9 +342,10 @@ class TestMetadataPayloads:
         """eval() call in image metadata is detected."""
         filepath = tmp_path / "image.jpg"
         eval_payload = b"eval(base64_decode($payload))"
-        filepath.write_bytes(VALID_JPEG_BYTES[:20] + eval_payload + VALID_JPEG_BYTES[20:])
+        data = VALID_JPEG_BYTES[:20] + eval_payload + VALID_JPEG_BYTES[20:]
+        filepath.write_bytes(data)
 
-        findings = _check_metadata_payloads(filepath)
+        findings = _check_metadata_payloads(data)
 
         assert len(findings) >= 1
 
@@ -341,9 +353,10 @@ class TestMetadataPayloads:
         """Python import in image metadata is detected."""
         filepath = tmp_path / "image.jpg"
         py_payload = b'import os\nos.system("whoami")'
-        filepath.write_bytes(VALID_JPEG_BYTES[:20] + py_payload + VALID_JPEG_BYTES[20:])
+        data = VALID_JPEG_BYTES[:20] + py_payload + VALID_JPEG_BYTES[20:]
+        filepath.write_bytes(data)
 
-        findings = _check_metadata_payloads(filepath)
+        findings = _check_metadata_payloads(data)
 
         assert len(findings) >= 1
 
@@ -352,7 +365,7 @@ class TestMetadataPayloads:
         filepath = tmp_path / "clean.jpg"
         filepath.write_bytes(VALID_JPEG_BYTES)
 
-        findings = _check_metadata_payloads(filepath)
+        findings = _check_metadata_payloads(VALID_JPEG_BYTES)
 
         assert len(findings) == 0
 
@@ -363,11 +376,11 @@ class TestArchiveInVideo:
     def test_zip_appended_to_mp4(self, tmp_path):
         """ZIP archive appended to video is detected."""
         filepath = tmp_path / "video.mp4"
-        # Minimal MP4-like header + ZIP at end
         mp4_header = b"\x00\x00\x00\x1cftypisom" + b"\x00" * 100
-        filepath.write_bytes(mp4_header + ZIP_SIGNATURE + b"\x00" * 26)
+        data = mp4_header + ZIP_SIGNATURE + b"\x00" * 26
+        filepath.write_bytes(data)
 
-        findings = _check_archive_in_video(filepath)
+        findings = _check_archive_in_video(data, filepath)
 
         assert len(findings) >= 1
         assert any(f.severity == Severity.CRITICAL for f in findings)
@@ -376,12 +389,11 @@ class TestArchiveInVideo:
         """Pickle data appended to video is detected."""
         filepath = tmp_path / "video.mp4"
         mp4_header = b"\x00\x00\x00\x1cftypisom" + b"\x00" * 100
-        # Protocol 4 pickle with proper FRAME structure and valid opcode after frame
-        # FRAME (0x95) + 8-byte length (20) + EMPTY_DICT (0x7D) as first opcode
         valid_pickle = PICKLE_PROTO_4 + b"\x95\x14\x00\x00\x00\x00\x00\x00\x00}."
-        filepath.write_bytes(mp4_header + valid_pickle)
+        data = mp4_header + valid_pickle
+        filepath.write_bytes(data)
 
-        findings = _check_archive_in_video(filepath)
+        findings = _check_archive_in_video(data, filepath)
 
         assert len(findings) >= 1
         assert any("pickle" in f.message.lower() for f in findings)
@@ -393,11 +405,10 @@ class TestVideoMetadata:
     def test_mkv_with_attachments(self, tmp_path):
         """MKV with attachments element is flagged."""
         filepath = tmp_path / "video.mkv"
-        # EBML header + attachments element ID
-        mkv_data = b"\x1a\x45\xdf\xa3" + b"\x00" * 50 + b"\x19\x41\xa4\x69" + b"\x00" * 50
-        filepath.write_bytes(mkv_data)
+        data = b"\x1a\x45\xdf\xa3" + b"\x00" * 50 + b"\x19\x41\xa4\x69" + b"\x00" * 50
+        filepath.write_bytes(data)
 
-        findings = _check_video_metadata(filepath)
+        findings = _check_video_metadata(data, filepath)
 
         assert len(findings) >= 1
         assert any(f.severity == Severity.MEDIUM for f in findings)

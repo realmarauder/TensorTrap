@@ -1,6 +1,7 @@
 """Command-line interface for TensorTrap."""
 
 from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -17,7 +18,11 @@ from tensortrap import __version__
 from tensortrap.output.console import print_file_info, print_results
 from tensortrap.output.json_output import output_json
 from tensortrap.output.reports import save_reports
-from tensortrap.scanner.engine import collect_files, scan_file, scan_files_with_progress
+from tensortrap.scanner.engine import (
+    collect_files,
+    scan_file,
+    scan_files_with_progress,
+)
 
 app = typer.Typer(
     name="tensortrap",
@@ -53,23 +58,23 @@ def scan(
         "-v",
         help="Show detailed output including info-level findings",
     ),
-    no_hash: bool = typer.Option(
+    compute_hash: bool = typer.Option(
         False,
-        "--no-hash",
-        help="Skip computing file hashes",
+        "--hash/--no-hash",
+        help="Compute file hashes (disabled by default for performance)",
     ),
     report: bool = typer.Option(
         True,
         "--report/--no-report",
         help="Generate report files (txt, json, html, csv)",
     ),
-    report_dir: Path | None = typer.Option(
+    report_dir: Optional[Path] = typer.Option(
         None,
         "--report-dir",
         "-o",
         help="Directory to save reports (default: current directory)",
     ),
-    report_formats: str | None = typer.Option(
+    report_formats: Optional[str] = typer.Option(
         None,
         "--report-formats",
         "-f",
@@ -119,8 +124,6 @@ def scan(
         tensortrap scan ./images/ --external-validation
         tensortrap scan ./models/ --confidence-threshold 0.7
     """
-    compute_hash = not no_hash
-
     # Parse report formats
     formats = None
     if report_formats:
@@ -186,14 +189,16 @@ def scan(
         ) as progress:
             task = progress.add_task("Scanning files...", total=len(files))
 
-            for result in scan_files_with_progress(
+            scanner = scan_files_with_progress(
                 files,
                 compute_hash=compute_hash,
                 use_context_analysis=context_analysis,
                 use_external_validation=external_validation,
                 confidence_threshold=confidence_threshold,
                 entropy_threshold=entropy_threshold,
-            ):
+            )
+
+            for result in scanner:
                 results.append(result)
                 # Update progress with current file name (truncated)
                 filename = result.filepath.name
