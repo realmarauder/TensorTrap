@@ -91,7 +91,8 @@ def scan_file(
 
     Args:
         filepath: Path to file to scan
-        compute_hash: Whether to compute SHA-256 hash (default: False for performance)
+        compute_hash: Whether to compute SHA-256 hash. Default changed to False
+            in v1.1.0 for performance - pass True to restore previous behavior.
         use_context_analysis: Whether to run context analysis on findings
         use_external_validation: Whether to run external tool validation
         confidence_threshold: Minimum confidence to report as actionable

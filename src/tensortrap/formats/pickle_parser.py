@@ -406,10 +406,14 @@ def get_dangerous_opcodes(data: bytes, full_scan: bool = False) -> list[PickleOp
 
 
 def is_valid_pickle(data: bytes) -> tuple[bool, str | None]:
-    """Check if data is valid pickle format.
+    """Quick validation check for pickle format.
 
-    This is a quick check that only looks at the header and
-    attempts limited parsing.
+    Performs a fast header check and limited parsing (first 1MB, up to 10 ops)
+    to determine if data looks like valid pickle. This is NOT exhaustive
+    validation - it's optimized for speed when screening many files.
+
+    Note: As of v1.1.0, this no longer requires a STOP opcode at the end,
+    making it suitable for truncated/partial pickle detection.
 
     Args:
         data: Raw bytes to check
