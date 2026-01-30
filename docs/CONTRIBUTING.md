@@ -93,4 +93,4 @@ To add support for a new file format:
 
 ## Questions?
 
-Open an issue or reach out to contact@m2dynamics.us
+Open an issue or reach out to smichael@m2dynamics.us

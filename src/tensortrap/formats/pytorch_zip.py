@@ -101,15 +101,21 @@ def extract_pickle_files(filepath: Path) -> list[tuple[str, bytes]]:
     return pickle_files
 
 
-def scan_zip_raw_for_pickle(filepath: Path) -> dict[str, Any]:
+def scan_zip_raw_for_pickle(
+    filepath: Path,
+    data: bytes | None = None,
+) -> dict[str, Any]:
     """Scan ZIP file raw bytes for pickle content (bypasses CRC check).
 
     CVE-2025-10156: Attackers zero out CRC values to bypass certain scanners.
     This function parses ZIP structure manually and extracts file content
     regardless of CRC validity.
 
+    Performance optimization (v1.1.0): Use fast find() instead of byte-by-byte scan.
+
     Args:
         filepath: Path to ZIP file
+        data: Optional pre-loaded file data (avoids re-reading for large files)
 
     Returns:
         Dict with scan results
@@ -120,26 +126,28 @@ def scan_zip_raw_for_pickle(filepath: Path) -> dict[str, Any]:
         "contains_pickle": False,
         "pickle_files_found": [],
         "pickle_offsets": [],
+        "pickle_protocols": [],
         "raw_extraction_success": False,
     }
 
-    try:
-        with open(filepath, "rb") as f:
-            data = f.read()
-    except OSError:
-        return result
+    # Use provided data or read from file
+    if data is None:
+        try:
+            with open(filepath, "rb") as f:
+                data = f.read()
+        except OSError:
+            return result
 
     if len(data) < 30:
         return result
 
-    # Parse local file headers manually
-    pos = 0
-    while pos < len(data) - 30:
-        # Look for local file header signature
-        if data[pos : pos + 4] != b"PK\x03\x04":
-            pos += 1
-            continue
+    # ZIP local file header signature
+    LOCAL_HEADER_SIG = b"PK\x03\x04"
 
+    # Parse local file headers manually using fast find()
+    pos = data.find(LOCAL_HEADER_SIG, 0)
+
+    while pos >= 0 and pos < len(data) - 30:
         # Parse local file header
         # Offset 14-17: CRC-32
         # Offset 18-21: Compressed size
@@ -174,17 +182,18 @@ def scan_zip_raw_for_pickle(filepath: Path) -> dict[str, Any]:
         file_content = data[content_start:content_end]
         result["raw_extraction_success"] = True
 
-        # Check if content looks like pickle
+        # Check if content looks like pickle (only check first few bytes)
         for pickle_sig in PICKLE_SIGNATURES:
             if file_content.startswith(pickle_sig):
                 if _is_valid_pickle_at(file_content, 0):
                     result["contains_pickle"] = True
                     result["pickle_files_found"].append(filename)
                     result["pickle_offsets"].append(content_start)
+                    result["pickle_protocols"].append(pickle_sig[1])
                 break
 
-        # Move to next header
-        pos = content_end
+        # Find next header (use fast find instead of byte-by-byte)
+        pos = data.find(LOCAL_HEADER_SIG, content_end)
 
     return result
 
@@ -261,23 +270,38 @@ def _is_valid_pickle_at(data: bytes, pos: int) -> bool:
     protocol = data[pos + 1]
     next_byte = data[pos + 2]
 
-    # Protocol 4 and 5: Expect FRAME opcode (0x95) with valid structure
+    # Protocol 4 and 5: Expect FRAME opcode (0x95) or GLOBAL (0x63)
+    # Standard protocol 4 uses FRAME, but some serializers use GLOBAL directly
     if protocol >= 4:
-        if next_byte != 0x95:  # Must be FRAME
-            return False
-        # FRAME is followed by 8-byte length
-        if pos + 11 >= len(data):
-            return False
-        frame_len = int.from_bytes(data[pos + 3 : pos + 11], "little")
-        # Frame length must be reasonable (1 byte to 100MB)
-        if frame_len < 1 or frame_len > 100_000_000:
-            return False
-        # Check byte after frame header is valid opcode
-        if pos + 11 < len(data):
-            opcode_after_frame = data[pos + 11]
-            if opcode_after_frame not in VALID_FRAME_OPCODES:
+        if next_byte == 0x95:  # FRAME
+            # FRAME is followed by 8-byte length
+            if pos + 11 >= len(data):
                 return False
-        return True
+            frame_len = int.from_bytes(data[pos + 3 : pos + 11], "little")
+            # Frame length must be reasonable (1 byte to 100MB)
+            if frame_len < 1 or frame_len > 100_000_000:
+                return False
+            # Check byte after frame header is valid opcode
+            if pos + 11 < len(data):
+                opcode_after_frame = data[pos + 11]
+                if opcode_after_frame not in VALID_FRAME_OPCODES:
+                    return False
+            return True
+        elif next_byte == 0x63:  # GLOBAL (c) - some serializers skip FRAME
+            # GLOBAL is followed by "module\nname\n"
+            if pos + 10 >= len(data):
+                return False
+            found_newline = False
+            for i in range(pos + 3, min(pos + 258, len(data))):
+                b = data[i]
+                if b == 0x0A:  # newline
+                    found_newline = True
+                    break
+                # Must be printable ASCII
+                if not (0x2E <= b <= 0x39 or 0x41 <= b <= 0x5A or 0x5F == b or 0x61 <= b <= 0x7A):
+                    return False
+            return found_newline
+        return False
 
     # Protocol 2 and 3: Only accept GLOBAL opcode with proper structure
     if protocol in (2, 3):
@@ -348,7 +372,10 @@ def find_zip_end(data: bytes) -> int | None:
     return zip_end
 
 
-def check_zip_trailing_data(filepath: Path) -> dict[str, Any]:
+def check_zip_trailing_data(
+    filepath: Path,
+    data: bytes | None = None,
+) -> dict[str, Any]:
     """Check for data appended after a ZIP archive (CVE-2025-1889 bypass).
 
     Attackers can append malicious pickle data after the ZIP EOCD.
@@ -357,6 +384,7 @@ def check_zip_trailing_data(filepath: Path) -> dict[str, Any]:
 
     Args:
         filepath: Path to ZIP archive
+        data: Optional pre-loaded file data (avoids re-reading for large files)
 
     Returns:
         Dict with trailing data info and any findings
@@ -371,11 +399,13 @@ def check_zip_trailing_data(filepath: Path) -> dict[str, Any]:
         "pickle_protocol": None,
     }
 
-    try:
-        with open(filepath, "rb") as f:
-            data = f.read()
-    except OSError:
-        return result
+    # Use provided data or read from file
+    if data is None:
+        try:
+            with open(filepath, "rb") as f:
+                data = f.read()
+        except OSError:
+            return result
 
     result["file_size"] = len(data)
 
@@ -407,7 +437,10 @@ def check_zip_trailing_data(filepath: Path) -> dict[str, Any]:
     return result
 
 
-def scan_7z_for_pickle(filepath: Path) -> dict[str, Any]:
+def scan_7z_for_pickle(
+    filepath: Path,
+    data: bytes | None = None,
+) -> dict[str, Any]:
     """Scan a 7z archive for embedded pickle data (CVE-2025-1889 bypass).
 
     7z archives can contain pickle files that bypass security scanners.
@@ -419,6 +452,7 @@ def scan_7z_for_pickle(filepath: Path) -> dict[str, Any]:
 
     Args:
         filepath: Path to 7z archive
+        data: Optional pre-loaded file data (avoids re-reading)
 
     Returns:
         Dict with scan results
@@ -431,11 +465,13 @@ def scan_7z_for_pickle(filepath: Path) -> dict[str, Any]:
         "file_size": 0,
     }
 
-    try:
-        with open(filepath, "rb") as f:
-            data = f.read()
-    except OSError:
-        return result
+    # Use provided data or read from file
+    if data is None:
+        try:
+            with open(filepath, "rb") as f:
+                data = f.read()
+        except OSError:
+            return result
 
     result["file_size"] = len(data)
 
