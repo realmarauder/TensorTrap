@@ -9,7 +9,7 @@ class TestScanFile:
 
     def test_scan_pickle_file(self, safe_pickle_file):
         """Test scanning a pickle file."""
-        result = scan_file(safe_pickle_file)
+        result = scan_file(safe_pickle_file, compute_hash=True)
 
         assert result.filepath == safe_pickle_file
         assert result.format == "pickle"
