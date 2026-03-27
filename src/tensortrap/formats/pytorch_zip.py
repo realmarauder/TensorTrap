@@ -133,13 +133,10 @@ def scan_zip_raw_for_pickle(filepath: Path) -> dict[str, Any]:
         return result
 
     # Parse local file headers manually
-    pos = 0
-    while pos < len(data) - 30:
-        # Look for local file header signature
-        if data[pos : pos + 4] != b"PK\x03\x04":
-            pos += 1
-            continue
-
+    # Use find() instead of byte-by-byte search for significant speedup
+    pk_sig = b"PK\x03\x04"
+    pos = data.find(pk_sig, 0)
+    while 0 <= pos < len(data) - 30:
         # Parse local file header
         # Offset 14-17: CRC-32
         # Offset 18-21: Compressed size
@@ -183,8 +180,8 @@ def scan_zip_raw_for_pickle(filepath: Path) -> dict[str, Any]:
                     result["pickle_offsets"].append(content_start)
                 break
 
-        # Move to next header
-        pos = content_end
+        # Find next header using optimized search
+        pos = data.find(pk_sig, content_end)
 
     return result
 

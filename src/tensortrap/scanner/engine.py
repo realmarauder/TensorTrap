@@ -107,13 +107,22 @@ def scan_file(
     # Detect format
     file_format = detect_format(filepath)
 
-    # Compute hash if requested
+    # Read file data once for all scanners to share.
+    # For very large files (>100MB), we still read but scanners will
+    # use the streaming parser to skip binary data efficiently.
+    try:
+        with open(filepath, "rb") as f:
+            file_data = f.read()
+    except OSError:
+        file_data = b""
+
+    # Compute hash from cached data (avoids re-reading the file)
     file_hash = ""
     if compute_hash:
-        file_hash = _compute_sha256(filepath)
+        file_hash = hashlib.sha256(file_data).hexdigest()
 
-    # Run appropriate scanner
-    findings = _scan_by_format(filepath, file_format, scan_options)
+    # Run appropriate scanner with cached data
+    findings = _scan_by_format(filepath, file_format, scan_options, file_data=file_data)
 
     # Run external validation if enabled
     if use_external_validation and findings:
@@ -121,6 +130,9 @@ def scan_file(
 
     # Calculate scan time
     scan_time_ms = (time.perf_counter() - start_time) * 1000
+
+    # Free the cached data to avoid holding large buffers in memory
+    del file_data
 
     return ScanResult(
         filepath=filepath,
@@ -263,6 +275,7 @@ def _scan_by_format(
     filepath: Path,
     file_format: str,
     scan_options: dict[str, Any] | None = None,
+    file_data: bytes | None = None,
 ) -> list[Finding]:
     """Run the appropriate scanner for a file format.
 
@@ -270,6 +283,7 @@ def _scan_by_format(
         filepath: Path to file
         file_format: Detected format
         scan_options: Context analysis options
+        file_data: Pre-read file data (avoids redundant reads)
 
     Returns:
         List of findings
@@ -335,14 +349,18 @@ def _scan_by_format(
         findings.extend(polyglot_findings)
 
     # Run obfuscation detection on high-risk formats
+    # Use cached data instead of re-reading the file
     if file_format in ("pickle", "onnx", "keras", "unknown"):
-        try:
-            with open(filepath, "rb") as f:
-                data = f.read(1024 * 1024)  # Read first 1MB for obfuscation check
-            obfuscation_findings = scan_for_obfuscation(data)
+        obfuscation_data = file_data[:1_048_576] if file_data else b""
+        if not obfuscation_data:
+            try:
+                with open(filepath, "rb") as f:
+                    obfuscation_data = f.read(1_048_576)
+            except OSError:
+                obfuscation_data = b""
+        if obfuscation_data:
+            obfuscation_findings = scan_for_obfuscation(obfuscation_data)
             findings.extend(obfuscation_findings)
-        except OSError:
-            pass
 
     # Add remediation recommendations to all findings
     add_recommendations(findings)
@@ -656,25 +674,6 @@ def _scan_archive_format(filepath: Path) -> list[Finding]:
     )
 
     return findings
-
-
-def _compute_sha256(filepath: Path) -> str:
-    """Compute SHA-256 hash of a file.
-
-    Args:
-        filepath: Path to file
-
-    Returns:
-        Hex-encoded SHA-256 hash
-    """
-    sha256 = hashlib.sha256()
-    try:
-        with open(filepath, "rb") as f:
-            for chunk in iter(lambda: f.read(65536), b""):
-                sha256.update(chunk)
-        return sha256.hexdigest()
-    except OSError:
-        return ""
 
 
 def _apply_external_validation(
