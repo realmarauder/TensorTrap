@@ -1,3 +1,3 @@
 """TensorTrap - Security scanner for AI/ML model files."""
 
-__version__ = "0.4.0"
+__version__ = "1.0.0"

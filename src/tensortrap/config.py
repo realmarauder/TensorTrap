@@ -17,11 +17,25 @@ DEFAULT_REPORT_DIR = Path.home() / ".local" / "share" / "tensortrap" / "reports"
 DEFAULT_RETAIN_DAYS = 30
 DEFAULT_REPORT_FORMATS = ["txt", "json", "html", "csv"]
 
+DEFAULT_WEB_PORT = 7780
+
 DEFAULTS = {
     "reports": {
         "directory": str(DEFAULT_REPORT_DIR),
         "retain_days": DEFAULT_RETAIN_DAYS,
         "formats": DEFAULT_REPORT_FORMATS,
+    },
+    "web": {
+        "port": DEFAULT_WEB_PORT,
+        "auto_open_browser": True,
+    },
+    "schedule": {
+        "enabled": False,
+        "scan_paths": [],
+        "scan_time": "03:00",
+        "recursive": True,
+        "context_analysis": True,
+        "confidence_threshold": 0.5,
     },
 }
 
@@ -38,6 +52,28 @@ retain_days = {retain_days}
 
 # Report formats to generate: txt, json, html, csv
 formats = [{formats}]
+
+[web]
+# Port for the web UI server
+port = {web_port}
+
+# Automatically open browser when starting the web UI
+auto_open_browser = true
+
+[schedule]
+# Enable daily scheduled scans
+enabled = false
+
+# Paths to scan (list of directories)
+scan_paths = []
+
+# Time of day to run scan (24-hour format)
+scan_time = "03:00"
+
+# Scan options
+recursive = true
+context_analysis = true
+confidence_threshold = 0.5
 """
 
 
@@ -112,6 +148,7 @@ def save_default_config(
         report_dir=str(DEFAULT_REPORT_DIR),
         retain_days=chosen_retain,
         formats=formats_str,
+        web_port=DEFAULT_WEB_PORT,
     )
 
     path.write_text(content, encoding="utf-8")

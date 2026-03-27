@@ -40,6 +40,12 @@ config_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(config_app, name="config")
+service_app = typer.Typer(
+    name="service",
+    help="Manage TensorTrap background service",
+    no_args_is_help=True,
+)
+app.add_typer(service_app, name="service")
 console = Console()
 
 
@@ -394,6 +400,148 @@ def config_reset() -> None:
     """Reset configuration to defaults."""
     path = save_default_config()
     console.print(f"[green]Config reset to defaults: {path}[/green]")
+
+
+# --- Service Commands ---
+
+
+@service_app.command("install")
+def service_install() -> None:
+    """Install TensorTrap as a background service.
+
+    Sets up a systemd user service that starts on login and runs
+    the web dashboard automatically.
+    """
+    from tensortrap.web.service import install_service
+
+    console.print("Installing TensorTrap service...")
+    result = install_service()
+
+    if result.get("active"):
+        console.print("[bold green]Service installed and running![/bold green]")
+        config = load_config()
+        port = config.get("web", {}).get("port", 7780)
+        console.print(f"  Web UI: [cyan]http://127.0.0.1:{port}[/cyan]")
+        console.print(f"  Service: {result['service_path']}")
+        console.print()
+        console.print("[dim]Bookmark the URL above for easy access.[/dim]")
+    else:
+        console.print("[yellow]Service installed but may not have started.[/yellow]")
+        console.print("[dim]Check status with: tensortrap service status[/dim]")
+
+
+@service_app.command("uninstall")
+def service_uninstall() -> None:
+    """Remove the TensorTrap background service."""
+    from tensortrap.web.service import uninstall_service
+
+    result = uninstall_service()
+    if not result.get("installed", True):
+        console.print(f"[green]{result.get('message', 'Service uninstalled')}[/green]")
+    else:
+        console.print("[red]Failed to uninstall service[/red]")
+
+
+@service_app.command("status")
+def service_status() -> None:
+    """Show TensorTrap service status."""
+    from tensortrap.web.service import get_service_status
+
+    status = get_service_status()
+
+    if not status["installed"]:
+        console.print("[yellow]Service not installed[/yellow]")
+        console.print("[dim]Install with: tensortrap service install[/dim]")
+        return
+
+    active_str = "[green]running[/green]" if status["active"] else "[red]stopped[/red]"
+    enabled_str = "[green]enabled[/green]" if status["enabled"] else "[yellow]disabled[/yellow]"
+
+    console.print("[bold]TensorTrap Service[/bold]")
+    console.print(f"  Status:  {active_str}")
+    console.print(f"  Startup: {enabled_str}")
+    console.print(f"  Path:    {status['service_path']}")
+
+
+@service_app.command("restart")
+def service_restart() -> None:
+    """Restart the TensorTrap background service."""
+    from tensortrap.web.service import restart_service
+
+    result = restart_service()
+    if result.get("error"):
+        console.print(f"[red]{result['error']}[/red]")
+    elif result.get("restarted"):
+        console.print("[green]Service restarted[/green]")
+    else:
+        console.print("[yellow]Restart may have failed[/yellow]")
+        console.print("[dim]Check status with: tensortrap service status[/dim]")
+
+
+@app.command()
+def serve(
+    port: int | None = typer.Option(
+        None,
+        "--port",
+        "-p",
+        help="Port to listen on (default: from config or 7780)",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Bind address",
+    ),
+    no_browser: bool = typer.Option(
+        False,
+        "--no-browser",
+        help="Don't auto-open browser",
+    ),
+) -> None:
+    """Start the TensorTrap web dashboard.
+
+    Launches a local web server with a browser-based UI for viewing
+    reports, running scans, and managing configuration.
+
+    Examples:
+        tensortrap serve
+        tensortrap serve --port 8080
+        tensortrap serve --no-browser
+    """
+    try:
+        import uvicorn
+    except ImportError:
+        console.print("[red]Web UI dependencies not installed.[/red]")
+        console.print("Install with: [cyan]pip install tensortrap[web][/cyan]")
+        raise typer.Exit(1)
+
+    config = load_config()
+    if port is None:
+        port = config.get("web", {}).get("port", 7780)
+
+    auto_open = config.get("web", {}).get("auto_open_browser", True)
+    if not no_browser and auto_open:
+        import threading
+        import webbrowser
+
+        def open_browser():
+            import time
+
+            time.sleep(1.5)
+            webbrowser.open(f"http://{host}:{port}")
+
+        threading.Thread(target=open_browser, daemon=True).start()
+
+    console.print("[bold green]TensorTrap Web UI[/bold green]")
+    console.print(f"  Running at: [cyan]http://{host}:{port}[/cyan]")
+    console.print("  Press Ctrl+C to stop")
+    console.print()
+
+    from tensortrap.web.app import app as web_app
+
+    try:
+        uvicorn.run(web_app, host=host, port=port, log_level="warning")
+    except KeyboardInterrupt:
+        console.print("\n[dim]Shutting down...[/dim]")
 
 
 @app.command()
