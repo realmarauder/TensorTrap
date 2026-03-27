@@ -151,8 +151,11 @@ def update_config_value(key: str, value: str, config_path: Path | None = None) -
         if stripped.startswith("[") and stripped.endswith("]"):
             in_section = stripped == f"[{section}]"
 
-        if in_section and stripped.startswith(f"{name} =") or in_section and stripped.startswith(
-            f"{name}="
+        if (
+            in_section
+            and stripped.startswith(f"{name} =")
+            or in_section
+            and stripped.startswith(f"{name}=")
         ):
             new_lines.append(f"{name} = {parsed_value}")
             found = True
@@ -172,8 +175,10 @@ def update_config_value(key: str, value: str, config_path: Path | None = None) -
                 stripped = line.strip()
                 if stripped == section_header:
                     in_target = True
-                elif in_target and not added and (
-                    stripped == "" or (stripped.startswith("[") and stripped.endswith("]"))
+                elif (
+                    in_target
+                    and not added
+                    and (stripped == "" or (stripped.startswith("[") and stripped.endswith("]")))
                 ):
                     final_lines.insert(-1, f"{name} = {parsed_value}")
                     added = True
