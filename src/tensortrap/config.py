@@ -162,7 +162,7 @@ def update_config_value(key: str, value: str, config_path: Path | None = None) -
     if not found:
         # Add to the appropriate section or create it
         section_header = f"[{section}]"
-        if section_header in [l.strip() for l in lines]:
+        if section_header in [line.strip() for line in lines]:
             # Find the section and append
             final_lines = []
             added = False

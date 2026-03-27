@@ -379,9 +379,12 @@ def config_init() -> None:
     console.print(f"[bold green]Config created: {path}[/bold green]")
     console.print()
     console.print("[bold]Your settings:[/bold]")
-    console.print(f"  Report directory: ~/.local/share/tensortrap/reports")
+    console.print("  Report directory: ~/.local/share/tensortrap/reports")
     console.print(f"  Report formats:   {', '.join(chosen_formats)}")
-    console.print(f"  Retention:        {retain_days} days" if retain_days > 0 else "  Retention:        forever")
+    if retain_days > 0:
+        console.print(f"  Retention:        {retain_days} days")
+    else:
+        console.print("  Retention:        forever")
     console.print()
     console.print("[dim]Change settings anytime with: tensortrap config set <key> <value>[/dim]")
 
