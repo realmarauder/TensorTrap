@@ -1,6 +1,6 @@
 # TensorTrap
 
-This is a novel Security scanner for AI/ML model files. It detects malicious code in pickle, safetensors, and GGUF files before loading them into workflows. It also checks output files to see if the model files generated malicious code embedded within media files (e.g., jpeg, png, mp4) that could harm your environment when opening/viewing. 
+This is a novel Security scanner for AI/ML model files. It detects malicious code in pickle, safetensors, and GGUF files before loading them into workflows. It also checks output files to see if the model files generated malicious code embedded within media files (e.g., jpeg, png, mp4) that could harm your environment when opening/viewing.
 
 ## Why TensorTrap?
 
@@ -17,24 +17,130 @@ TensorTrap is cross-platform and runs on all major operating systems:
 
 | Platform | Status | CI Tested |
 |----------|--------|-----------|
-| **Linux** | ✓ Full Support | Ubuntu (Python 3.10-3.12) |
-| **Windows** | ✓ Full Support | Windows Server (Python 3.10-3.12) |
-| **macOS** | ✓ Full Support | macOS (Python 3.10-3.12) |
+| **Linux** | Full Support | Ubuntu (Python 3.10-3.12) |
+| **Windows** | Full Support | Windows Server (Python 3.10-3.12) |
+| **macOS** | Full Support | macOS (Python 3.10-3.12) |
 
 All core functionality works identically across platforms. TensorTrap uses pure Python with cross-platform libraries (`pathlib`, `struct`, `zipfile`), ensuring consistent behavior everywhere.
 
 ## Installation
 
+### Windows (Recommended: Standalone Executable)
+
+No Python installation required. Download and run:
+
+1. Go to the [Releases](https://github.com/realmarauder/TensorTrap/releases) page
+2. Download **`tensortrap-windows-x64.exe`**
+3. Move it to a folder in your PATH (e.g., `C:\Program Files\TensorTrap\`)
+4. Open Command Prompt or PowerShell and run:
+
+```powershell
+tensortrap scan .\models\
+```
+
+> **Tip:** To add TensorTrap to your PATH, open System Properties > Environment Variables > edit the `Path` variable and add the folder where you saved the executable.
+
+### Linux / macOS (pip)
+
 ```bash
 pip install tensortrap
 ```
 
-For development:
+### Web Dashboard (All Platforms)
+
+The web dashboard provides a browser-based UI for scanning, viewing reports, and managing configuration. Install the web extras:
+
 ```bash
-pip install tensortrap[dev]
+pip install tensortrap[web]
 ```
 
-## Usage
+### Development
+
+```bash
+pip install tensortrap[dev,web]
+```
+
+## Web Dashboard
+
+TensorTrap includes a browser-based dashboard that makes scanning and report management accessible without the command line.
+
+### Starting the Dashboard
+
+```bash
+tensortrap serve
+```
+
+This starts a local web server and automatically opens the dashboard in your browser at `http://127.0.0.1:7780`. To start without opening the browser:
+
+```bash
+tensortrap serve --no-browser
+tensortrap serve --port 8080    # Custom port
+```
+
+### Running a Scan
+
+1. Click **Scan** in the left sidebar
+2. Click **Browse** to open the folder picker and navigate to the directory you want to scan, or type the path directly
+3. Adjust scan options if needed (recursive scanning, context analysis, confidence threshold)
+4. Click **Start Scan**
+5. Watch the real-time progress bar as files are scanned
+6. When complete, click **View Full Report** to see detailed results
+
+You can navigate to other tabs while a scan is running — the progress is preserved and a banner will show the scan status on other pages.
+
+### Viewing Reports
+
+Click **Reports** in the left sidebar to see all scan reports sorted by date. Click any report to view the full details including:
+
+- Summary statistics (safe files, files with issues, severity breakdown)
+- Detailed findings for each flagged file with severity badges
+- Confidence scores and recommended actions
+- File format, size, and scan time for each result
+
+### What To Do With Report Results
+
+- **Critical / High severity findings**: Do not load these files. Delete them or quarantine them immediately. These indicate known malicious patterns like `os.system` calls or dangerous pickle opcodes.
+- **Medium severity findings**: Investigate further. These may be legitimate patterns (like standard pickle REDUCE opcodes) or potential threats. Check the confidence score — high confidence means the finding is more likely to be a real threat.
+- **Low / Info findings**: Generally informational. Review if you want to be thorough, but these are unlikely to be threats.
+- **Safe files**: No action needed. These files passed all security checks.
+
+### Configuration
+
+Click **Configuration** in the left sidebar to manage all settings from the browser:
+
+**Reports**
+- **Report Directory**: Where scan reports are saved (use Browse to select a folder)
+- **Retention**: Number of days to keep reports (default: 30, set to 0 to keep forever)
+- **Report Formats**: Choose which formats to generate (HTML, TXT, JSON, CSV)
+
+**Web UI**
+- **Port**: The port the dashboard runs on (default: 7780)
+- **Auto-open browser**: Whether to open the browser automatically when starting the dashboard
+
+**Scheduled Scans**
+- **Enable daily scan**: Toggle automatic daily scanning
+- **Scan Time**: What time of day to run the scan (24-hour format, default: 03:00)
+- **Scan Paths**: Directories to scan automatically (one per line)
+- **Scan Options**: Recursive scanning, context analysis, confidence threshold
+
+Click **Save Configuration** to apply changes, **Discard Changes** to revert unsaved edits, or **Reset to Defaults** to restore all settings to their original values.
+
+### Running as a Background Service
+
+To have TensorTrap start automatically when you log in:
+
+```bash
+tensortrap service install    # Install and start the service
+tensortrap service status     # Check if it's running
+tensortrap service restart    # Restart after config changes
+tensortrap service uninstall  # Remove the service
+```
+
+Once installed, the dashboard is always available at `http://127.0.0.1:7780` — bookmark this URL for easy access.
+
+> **Note:** Background service uses systemd and is currently supported on Linux. macOS launchd support is planned.
+
+## CLI Usage
 
 Scan a single file:
 ```bash
@@ -67,16 +173,32 @@ Options:
   -v, --verbose                         Show detailed output including info-level findings
   --no-hash                             Skip computing file hashes
   --report / --no-report                Generate report files (default: enabled for directories)
-  -o, --report-dir PATH                 Directory to save reports (default: current directory)
-  -f, --report-formats TEXT             Comma-separated formats: txt,json,html,csv (default: all)
+  -o, --report-dir PATH                 Directory to save reports (overrides config)
+  -f, --report-formats TEXT             Comma-separated formats: txt,json,html,csv (overrides config)
+  --retain-days INT                     Days to keep old reports (overrides config, 0 = keep forever)
+  --context-analysis / --no-context-analysis  Context analysis for confidence scoring (default: enabled)
+  --external-validation                 Run external tool validation (exiftool/binwalk)
+  -c, --confidence-threshold FLOAT      Minimum confidence to report (0.0-1.0, default: 0.5)
+  --entropy-threshold FLOAT             Entropy threshold for compressed data (0.0-8.0, default: 7.0)
+```
+
+### CLI Configuration
+
+TensorTrap stores configuration in `~/.config/tensortrap/config.toml`. Manage it from the command line:
+
+```bash
+tensortrap config init          # Interactive setup
+tensortrap config show          # Display current settings
+tensortrap config set <key> <value>  # Update a setting
+tensortrap config reset         # Restore defaults
 ```
 
 ### Report Generation
 
-When scanning directories, TensorTrap automatically generates reports in multiple formats:
+When scanning directories, TensorTrap automatically generates reports:
 
 ```bash
-# Scan with all report formats (default)
+# Scan with configured report formats (default)
 tensortrap scan ./models/
 
 # Disable report generation
@@ -234,7 +356,7 @@ python tests/benchmark_comprehensive.py --report
 Collecting files from ./models/...
 Found 15 model file(s)
 
-⠋ Scanning: model.pkl ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 15/15 0:00:02
+Scanning: model.pkl ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 15/15 0:00:02
 
 model.pkl (pickle) - THREATS DETECTED
 
@@ -305,69 +427,64 @@ TensorTrap focuses on AI model file security. For comprehensive protection of yo
 ### What Each Tool Catches
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    AI Workflow Security                         │
-├─────────────────────────────────────────────────────────────────┤
-│  Downloaded Models    │  Generated Output    │  System Level    │
-│  ─────────────────    │  ────────────────    │  ────────────    │
-│  TensorTrap ✓         │  Stego ✓             │  RKHunter ✓      │
-│  • Pickle exploits    │  • Hidden data       │  • Rootkits      │
-│  • Format attacks     │  • Steganography     │  • Backdoors     │
-│  • Polyglot files     │                      │                  │
-│                       │                      │  ClamAV ✓        │
-│  YARA ✓               │                      │  • Known malware │
-│  • Known signatures   │                      │  • Viruses       │
-└─────────────────────────────────────────────────────────────────┘
+                         AI Workflow Security
+ ─────────────────────────────────────────────────────────────
+  Downloaded Models       Generated Output       System Level
+  ─────────────────       ────────────────       ────────────
+  TensorTrap              Stego                  RKHunter
+  - Pickle exploits       - Hidden data          - Rootkits
+  - Format attacks        - Steganography        - Backdoors
+  - Polyglot files
+                                                 ClamAV
+  YARA                                           - Known malware
+  - Known signatures                             - Viruses
 ```
 
 ### Quick Setup
 
-**All Platforms (TensorTrap only):**
+**Linux (pip):**
 ```bash
-pip install tensortrap
-tensortrap scan ./models/
-```
+pip install tensortrap        # CLI only
+pip install tensortrap[web]   # CLI + web dashboard
 
-**Linux (Full Security Stack):**
-```bash
-# Install TensorTrap
-pip install tensortrap
-
-# Install system tools
+# Optional: full security stack
 sudo apt update
 sudo apt install yara rkhunter clamav clamav-daemon
-
-# Initialize ClamAV database
 sudo freshclam
-
-# Run comprehensive scan
-tensortrap scan ~/Models ~/Downloads    # AI models + polyglot detection
-yara -r /path/to/rules ~/Downloads      # Pattern matching
-rkhunter --check                        # System integrity
-clamscan -r ~/Downloads                 # General malware
 ```
 
-**Windows:**
-```powershell
-# Install TensorTrap
-pip install tensortrap
+**Windows (Standalone Executable):**
 
+Download `tensortrap-windows-x64.exe` from the [Releases](https://github.com/realmarauder/TensorTrap/releases) page. No Python required.
+
+```powershell
 # Scan models
 tensortrap scan .\models\
 tensortrap scan $env:USERPROFILE\Downloads\*.pt
 ```
 
-**macOS:**
-```bash
-# Install TensorTrap
+**Windows (pip):**
+```powershell
 pip install tensortrap
+pip install tensortrap[web]   # For the web dashboard
+```
+
+**macOS (pip):**
+```bash
+pip install tensortrap
+pip install tensortrap[web]   # For the web dashboard
 
 # Optional: Install YARA via Homebrew
 brew install yara
-
-# Scan models
-tensortrap scan ~/Models ~/Downloads
 ```
+
+**macOS / Linux (Standalone Executable):**
+
+Pre-built binaries are also available on the [Releases](https://github.com/realmarauder/TensorTrap/releases) page:
+- `tensortrap-linux-x64`
+- `tensortrap-macos-arm64` (Apple Silicon)
+- `tensortrap-macos-x64` (Intel)
+
 ## Read More at M2Dynamics.us
 [https://m2dynamics.us/2026/01/11/tensortrap/]
 
@@ -381,7 +498,7 @@ git clone https://github.com/realmarauder/TensorTrap.git
 cd TensorTrap
 
 # Install dev dependencies
-pip install -e ".[dev]"
+pip install -e ".[dev,web]"
 
 # Run tests
 pytest
