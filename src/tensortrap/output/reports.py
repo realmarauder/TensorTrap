@@ -13,6 +13,7 @@ v0.3.3 - Enhanced HTML report:
 
 import csv
 import json
+import time
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
@@ -1126,11 +1127,36 @@ def generate_csv_report(results: list[ScanResult], scan_path: str) -> str:
     return output.getvalue()
 
 
+def cleanup_old_reports(output_dir: Path, retain_days: int) -> list[Path]:
+    """Delete TensorTrap report files older than retain_days.
+
+    Args:
+        output_dir: Directory containing reports
+        retain_days: Number of days to keep reports (0 = keep forever)
+
+    Returns:
+        List of deleted file paths
+    """
+    if retain_days <= 0:
+        return []
+
+    cutoff = time.time() - (retain_days * 86400)
+    deleted = []
+
+    for filepath in output_dir.glob("tensortrap_report_*"):
+        if filepath.is_file() and filepath.stat().st_mtime < cutoff:
+            filepath.unlink()
+            deleted.append(filepath)
+
+    return deleted
+
+
 def save_reports(
     results: list[ScanResult],
     scan_path: str,
     output_dir: Path,
     formats: list[str] | None = None,
+    retain_days: int = 0,
 ) -> dict[str, Path]:
     """Save reports in multiple formats.
 
@@ -1139,6 +1165,7 @@ def save_reports(
         scan_path: Path that was scanned
         output_dir: Directory to save reports in
         formats: List of formats to generate (default: all)
+        retain_days: Number of days to keep old reports (0 = keep forever)
 
     Returns:
         Dictionary mapping format to saved file path
@@ -1165,6 +1192,10 @@ def save_reports(
             filepath = output_dir / f"tensortrap_report_{timestamp}.{fmt}"
             filepath.write_text(content, encoding="utf-8")
             saved_files[fmt] = filepath
+
+    # Clean up old reports after saving new ones
+    if retain_days > 0:
+        cleanup_old_reports(output_dir, retain_days)
 
     return saved_files
 
