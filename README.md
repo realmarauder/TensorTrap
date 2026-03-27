@@ -138,7 +138,7 @@ tensortrap service uninstall  # Remove the service
 
 Once installed, the dashboard is always available at `http://127.0.0.1:7780` — bookmark this URL for easy access.
 
-> **Note:** Background service uses systemd and is currently supported on Linux. macOS launchd support is planned.
+> **Note:** Background service uses systemd on Linux and launchd on macOS. Logs on macOS are saved to `~/Library/Logs/TensorTrap/`.
 
 ## CLI Usage
 
