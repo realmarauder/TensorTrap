@@ -5,6 +5,39 @@ All notable changes to TensorTrap will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-27
+
+### Added
+- **Web Dashboard**: Browser-based UI accessible via `tensortrap serve`
+  - Dark-themed dashboard with scan summary, severity stats, and recent findings
+  - Report browser for viewing all scan history with detailed findings
+  - Live scanning with real-time WebSocket progress bar
+  - Folder browser modal for selecting scan paths and report directories
+  - Configuration page with save, discard, and reset-to-defaults controls
+  - Scheduled daily scans via built-in asyncio scheduler
+- **Background Service**: Auto-start TensorTrap on login
+  - Linux: systemd user service (`tensortrap service install`)
+  - macOS: launchd agent with logging to `~/Library/Logs/TensorTrap/`
+  - CLI commands: `tensortrap service install/uninstall/status/restart`
+- **Configuration System**: TOML config at `~/.config/tensortrap/config.toml`
+  - Interactive setup via `tensortrap config init` with format selection
+  - Report directory, retention, and format preferences
+  - Web UI port and auto-open browser settings
+  - Scheduled scan paths, time, and options
+  - CLI commands: `tensortrap config show/set/init/reset`
+- **Report Management**
+  - Default report directory: `~/.local/share/tensortrap/reports/`
+  - Automatic report retention cleanup (default: 30 days)
+  - Web UI always generates JSON reports for dashboard viewing
+- **New Dependencies** (optional)
+  - `fastapi` and `uvicorn` as `[web]` extras: `pip install tensortrap[web]`
+  - `tomli` for Python 3.10 TOML config support
+
+### Changed
+- Report directory defaults to `~/.local/share/tensortrap/reports/` instead of current working directory
+- CLI report options now read defaults from config file (CLI flags still override)
+- Updated README with web dashboard documentation, Windows standalone installer instructions, and configuration guide
+
 ## [1.0.0] - 2026-01-11
 
 ### Changed
