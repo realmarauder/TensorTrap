@@ -28,7 +28,7 @@ class ScanScheduler:
 
     @property
     def is_running(self) -> bool:
-        return self._running
+        return bool(self._running)
 
     def status(self) -> dict:
         """Get scheduler status."""
