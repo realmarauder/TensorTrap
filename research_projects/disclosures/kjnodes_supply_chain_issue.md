@@ -1,38 +1,42 @@
-# GitHub Issue: Supply Chain Risk — Runtime pip installs and dynamic imports
+# GitHub Issue: Dynamic imports for cross-node integration
 
 **Repository:** https://github.com/kijai/ComfyUI-KJNodes
-**Files:** `nodes/mask_nodes.py:452`, `nodes/image_nodes.py:118`, `nodes/nodes.py:2116`
+**Files:**
+- [`nodes/image_nodes.py:4119-4122`](https://github.com/kijai/ComfyUI-KJNodes/blob/main/nodes/image_nodes.py#L4119-L4122) — `importlib.import_module()` for VideoHelperSuite
+- [`nodes/nodes.py:2116`](https://github.com/kijai/ComfyUI-KJNodes/blob/main/nodes/nodes.py#L2116) — `importlib.import_module()` for Advanced-ControlNet
 
 ---
 
-**Title:** Security: Runtime pip install and dynamic imports create supply chain risk
+**Title:** Security note: Dynamic imports via importlib for cross-node integration
 
 **Body:**
 
 ## Summary
 
-KJNodes performs runtime `pip install` commands in multiple node files and uses `importlib.import_module()` for dynamic module loading. These patterns create supply chain attack surfaces.
+KJNodes uses `importlib.import_module()` in multiple locations to load other ComfyUI custom node packages for cross-node integration. While the current usage targets specific known packages, `importlib` is a mechanism that can load arbitrary Python modules.
 
 ## Affected Code
 
-**Runtime pip install** (`mask_nodes.py:452`, `image_nodes.py:118`):
-Pip install commands run at import time or during node execution without user confirmation.
+[`nodes/image_nodes.py:4119-4122`](https://github.com/kijai/ComfyUI-KJNodes/blob/main/nodes/image_nodes.py#L4119-L4122):
+```python
+cls.vhs_nodes = importlib.import_module("ComfyUI-VideoHelperSuite.videohelpersuite")
+```
 
-**Dynamic module import** (`nodes.py:2116`):
-`importlib.import_module()` loads modules dynamically, which can execute arbitrary code if the module path is compromised.
+[`nodes/nodes.py:2116`](https://github.com/kijai/ComfyUI-KJNodes/blob/main/nodes/nodes.py#L2116):
+```python
+adv_control = importlib.import_module("ComfyUI-Advanced-ControlNet.adv_control")
+```
 
-## Why This Matters
+## Risk Assessment
 
-- Runtime pip installs can be hijacked via typosquatting or package compromise (see Ultralytics Dec 2024 attack)
-- Dynamic imports can load arbitrary Python modules
-- No integrity verification on installed packages
+**Current risk: LOW** — The module names are hardcoded strings targeting specific known ComfyUI packages. This is a common pattern for optional cross-node dependencies.
 
-## Recommended Fix
+**Potential risk:** If module names were ever derived from user input or workflow values, this would become a code execution vector. Flagging for awareness rather than as an active vulnerability.
 
-1. Move all dependency installation to a dedicated `install.py` or `requirements.txt` with pinned versions and hashes
-2. Replace dynamic imports with explicit static imports where possible
-3. Add user confirmation before any pip install operations
+## Recommendation
+
+No immediate action needed. The current implementation is acceptable for cross-node integration. This is an informational finding from an automated security audit.
 
 ## Discovery
 
-Found by [TensorTrap](https://github.com/realmarauder/TensorTrap) automated node auditor.
+Found by [TensorTrap](https://github.com/realmarauder/TensorTrap) automated node auditor. After manual review, this was downgraded from HIGH to LOW/informational — the automated scanner flagged `importlib` usage, but the actual implementation is safe in its current form.

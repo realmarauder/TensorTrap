@@ -1,7 +1,7 @@
 # GitHub Issue: Supply Chain Risk — os.system() pip installs in install.py
 
 **Repository:** https://github.com/Fannovel16/ComfyUI-Frame-Interpolation
-**File:** `install.py`, lines 46-56
+**File:** [`install.py`, lines 46-56](https://github.com/Fannovel16/ComfyUI-Frame-Interpolation/blob/main/install.py#L46-L56)
 
 ---
 
@@ -15,14 +15,18 @@ The `install.py` script uses `os.system()` to run pip install commands, includin
 
 ## Affected Code
 
+[`install.py:46`](https://github.com/Fannovel16/ComfyUI-Frame-Interpolation/blob/main/install.py#L46) — `os.system()` pip uninstall:
 ```python
-# install.py line 46
 os.system(f'"{sys.executable}" {s_param} -m pip uninstall -y cupy-wheel cupy-cuda102 ...')
+```
 
-# install.py line 50
+[`install.py:50`](https://github.com/Fannovel16/ComfyUI-Frame-Interpolation/blob/main/install.py#L50) — `os.system()` pip install with dynamic package name:
+```python
 os.system(f'"{sys.executable}" {s_param} -m pip install {cupy_package}')
+```
 
-# install.py lines 52-56
+[`install.py:52-56`](https://github.com/Fannovel16/ComfyUI-Frame-Interpolation/blob/main/install.py#L52-L56) — `os.system()` pip install from requirements file:
+```python
 with open(Path(__file__).parent / "requirements-no-cupy.txt", 'r') as f:
     for package in f.readlines():
         package = package.strip()

@@ -7,7 +7,8 @@ The `Base64ToConditioning` node in RES4LYF accepts user-controlled string input,
 ## Affected Component
 
 - **Repository:** https://github.com/ClownsharkBatwing/RES4LYF
-- **File:** `conditioning.py`, lines 487-503
+- **File:** [`conditioning.py`, lines 487-503](https://github.com/ClownsharkBatwing/RES4LYF/blob/0dc91c00c4c3fb38e7874fcd7a2a327765e8882c/conditioning.py#L487-L503)
+- **Vulnerable line:** [`conditioning.py:502`](https://github.com/ClownsharkBatwing/RES4LYF/blob/0dc91c00c4c3fb38e7874fcd7a2a327765e8882c/conditioning.py#L502) — `pickle.loads()` on untrusted input
 - **Node:** `Base64ToConditioning` (category: `RES4LYF/utilities`)
 - **CWE:** CWE-502 (Deserialization of Untrusted Data)
 - **CVSS 3.1 Estimate:** 9.8 CRITICAL (AV:N/AC:L/PR:N/UI:R/VC:H/VI:H/VA:H)

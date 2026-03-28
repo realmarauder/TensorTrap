@@ -12,7 +12,7 @@ During the development of [ComfyUI-TensorTrap](https://github.com/realmarauder/C
 
 ### The Critical Finding: Pickle Deserialization in a Live Node
 
-The most serious discovery was in **RES4LYF**, a popular utility node package. Its `Base64ToConditioning` node accepts a text string input, base64-decodes it, and passes it directly to Python's `pickle.loads()` — with no validation, no sanitization, and no restrictions on what pickle can deserialize.
+The most serious discovery was in **RES4LYF**, a popular utility node package. Its `Base64ToConditioning` node ([`conditioning.py:502`](https://github.com/ClownsharkBatwing/RES4LYF/blob/0dc91c00c4c3fb38e7874fcd7a2a327765e8882c/conditioning.py#L502)) accepts a text string input, base64-decodes it, and passes it directly to Python's `pickle.loads()` — with no validation, no sanitization, and no restrictions on what pickle can deserialize.
 
 This matters because `pickle.loads()` can execute arbitrary Python code. A malicious workflow shared on CivitAI, Discord, or Reddit could embed a crafted payload in the node's input value. When a user downloads and runs that workflow, the payload executes with full system access — file theft, reverse shells, credential harvesting, cryptomining — anything the attacker wants.
 
@@ -22,9 +22,8 @@ The developer's intent was legitimate: serializing conditioning data between mac
 
 We also found multiple popular packages running `os.system()` and `subprocess` calls to install pip packages at runtime:
 
-- **ComfyUI-Frame-Interpolation** runs `os.system(pip install ...)` for CuPy and other dependencies, reading package names from a requirements file
-- **WAS Node Suite** uses `subprocess.check_call` for automatic package installation
-- **KJNodes** performs runtime pip installs in multiple node files
+- **ComfyUI-Frame-Interpolation** runs `os.system(pip install ...)` for CuPy and other dependencies ([`install.py:46-56`](https://github.com/Fannovel16/ComfyUI-Frame-Interpolation/blob/main/install.py#L46-L56)), reading package names from a requirements file
+- **WAS Node Suite** uses `subprocess.check_call` for automatic package installation ([`WAS_Node_Suite.py:342-355`](https://github.com/WASasquatch/was-node-suite-comfyui/blob/main/WAS_Node_Suite.py#L342-L355))
 
 These patterns are nearly identical to the attack vector used in the **December 2024 Ultralytics supply chain attack**, where compromised package versions distributed a cryptominer to tens of thousands of users — including ComfyUI users through the Impact-Pack dependency chain.
 

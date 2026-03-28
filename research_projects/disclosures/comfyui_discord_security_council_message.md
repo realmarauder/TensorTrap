@@ -12,7 +12,11 @@ We've been building a ComfyUI integration (https://github.com/realmarauder/Comfy
 
 **RES4LYF — Arbitrary Code Execution via Pickle Deserialization**
 
-The `Base64ToConditioning` node in RES4LYF (https://github.com/ClownsharkBatwing/RES4LYF) accepts a STRING input, base64-decodes it, and passes it directly to `pickle.loads()` with no validation. This means any workflow that uses this node can embed a malicious pickle payload in the workflow JSON that achieves full RCE when the workflow is executed.
+The `Base64ToConditioning` node in RES4LYF (https://github.com/ClownsharkBatwing/RES4LYF) accepts a STRING input, base64-decodes it, and passes it directly to `pickle.loads()` with no validation.
+
+**Exact location:** [`conditioning.py:502`](https://github.com/ClownsharkBatwing/RES4LYF/blob/0dc91c00c4c3fb38e7874fcd7a2a327765e8882c/conditioning.py#L502)
+
+This means any workflow that uses this node can embed a malicious pickle payload in the workflow JSON that achieves full RCE when the workflow is executed.
 
 This is particularly concerning because:
 - The payload is embedded in the workflow itself, not in a package update
@@ -22,9 +26,8 @@ This is particularly concerning because:
 The developer's intention is legitimate (serializing conditioning data between machines for T5 offloading), but the implementation is a textbook CWE-502 deserialization vulnerability.
 
 We've also identified supply chain risks (runtime `os.system()` pip installs) in:
-- ComfyUI-Frame-Interpolation
-- WAS Node Suite
-- KJNodes
+- ComfyUI-Frame-Interpolation ([`install.py:46-56`](https://github.com/Fannovel16/ComfyUI-Frame-Interpolation/blob/main/install.py#L46-L56))
+- WAS Node Suite ([`WAS_Node_Suite.py:342-355`](https://github.com/WASasquatch/was-node-suite-comfyui/blob/main/WAS_Node_Suite.py#L342-L355))
 
 These use patterns nearly identical to the Ultralytics attack vector from December 2024.
 
