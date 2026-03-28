@@ -485,6 +485,53 @@ Pre-built binaries are also available on the [Releases](https://github.com/realm
 - `tensortrap-macos-arm64` (Apple Silicon)
 - `tensortrap-macos-x64` (Intel)
 
+## Active Research: Workflow Execution Security
+
+TensorTrap is actively researching a critical gap in AI/ML security: **workflow execution attacks**.
+
+Current security tools (including TensorTrap v1.2.0) focus on scanning individual files — detecting malicious pickle opcodes, polyglot attacks, and format exploits. But the next frontier is *workflow-level* security, where the danger isn't in any single file but in how components interact at runtime.
+
+### The Problem
+
+Platforms like [CivitAI](https://civitai.com), [Hugging Face](https://huggingface.co), [ComfyUI](https://github.com/comfyanonymous/ComfyUI), and [Replicate](https://replicate.com) enable users to share AI workflows that reference third-party custom node packages. A workflow JSON file can be completely clean — no malicious code, no eval statements — while still producing malicious behavior through the nodes it invokes.
+
+This affects any platform where users:
+- Download and run shared workflows ([CivitAI](https://civitai.com), [OpenArt](https://openart.ai), [ComfyWorkflows](https://comfyworkflows.com))
+- Install custom node packages from community repositories ([ComfyUI Manager](https://github.com/ltdrdata/ComfyUI-Manager))
+- Execute AI pipelines that combine multiple components ([Hugging Face Spaces](https://huggingface.co/spaces), [RunPod](https://www.runpod.io), [Replicate](https://replicate.com))
+
+### Attack Vectors Under Investigation
+
+| Vector | Description | Risk |
+|--------|-------------|------|
+| **Malicious Custom Nodes** | Node packages with hidden backdoors, data exfiltration, or reverse shells | Critical |
+| **Input Injection** | Workflow values that exploit nodes using `eval()`, `exec()`, or template injection | Critical |
+| **Execution Graph Exploitation** | Two benign nodes that create a dangerous combination when connected | High |
+| **Workflow-Triggered Downloads** | Nodes that fetch files from attacker-controlled URLs specified in workflows | High |
+| **Supply Chain via Package Managers** | Compromised updates to popular custom node packages | Critical |
+
+### Research Plan
+
+We are conducting a 6-phase research program covering landscape survey, vulnerability analysis, dangerous pattern identification, proof-of-concept development, feature design, and implementation. The goal is to build the first tool that analyzes AI workflow execution graphs for security threats.
+
+**Full research document:** [research_projects/comfyui_workflow_execution_analysis.md](research_projects/comfyui_workflow_execution_analysis.md)
+
+### Call for Collaboration
+
+This research has implications for every platform in the AI/ML ecosystem. If you work on AI infrastructure security at any of these organizations, we'd love to collaborate:
+
+- **[CivitAI](https://civitai.com)** — Largest community model and workflow sharing platform
+- **[Hugging Face](https://huggingface.co)** — Model hub and Spaces platform
+- **[ComfyUI](https://github.com/comfyanonymous/ComfyUI)** — Node-based AI workflow engine
+- **[Replicate](https://replicate.com)** — Cloud AI model deployment
+- **[RunPod](https://www.runpod.io)** — GPU cloud for AI workloads
+- **[Stability AI](https://stability.ai)** — Stable Diffusion ecosystem
+- **[OpenArt](https://openart.ai)** — AI art and workflow platform
+
+Contact: smichael.us@gmail.com | [M2 Dynamics](https://m2dynamics.us)
+
+---
+
 ## Read More at M2Dynamics.us
 [https://m2dynamics.us/2026/01/11/tensortrap/]
 
