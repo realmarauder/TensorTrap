@@ -5,6 +5,23 @@ All notable changes to TensorTrap will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-03-27
+
+### Performance
+- **Streaming pickle parser**: Skips binary tensor weight data while scanning all security-relevant control opcodes. Files under 1MB use the full parser for maximum accuracy.
+- **File data caching**: Each file is read once and shared across all scanners (pickle, polyglot, obfuscation). SHA-256 computed from cached buffer instead of re-reading.
+- **ZIP header search optimization**: Uses Python's C-implemented `find()` instead of byte-by-byte iteration for locating ZIP local file headers.
+- **Quick pickle validation**: Large files check header + STOP byte at end instead of parsing the entire opcode stream.
+
+### Benchmark
+- Tested on 133GB / 128 model files (Digital Ocean H200 GPU droplet)
+- **Baseline (v1.1.0)**: 4 min 27.6 sec
+- **Optimized (v1.2.0)**: 2 min 44.0 sec — **38% faster**
+- Zero detection regressions — identical findings across all files
+
+### Credits
+- Performance optimizations inspired by @JustMaier's PR #28 (CivitAI)
+
 ## [1.1.0] - 2026-03-27
 
 ### Added
